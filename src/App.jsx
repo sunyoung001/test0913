@@ -6,7 +6,7 @@ import {
   MoreHorizontal, PencilLine, Plus, Search, Send, ShieldCheck, Sparkles,
   Upload, UserCog, Users, X, XCircle,
 } from 'lucide-react'
-import { ensureSession, firebaseReady, listenClasses, listenTasks, listenTeachers, removeTeacher, saveClass, saveTask, saveTeacher, saveUserProfile, submitEntry } from './firebase'
+import { ensureSession, firebaseReady, listenClasses, listenTasks, listenTeachers, loginRegisteredUser, logoutSession, removeTeacher, saveClass, saveTask, saveTeacher, saveUserProfile, submitEntry } from './firebase'
 
 const USERS = {
   student: { name: '김민준', role: '학생', className: '2학년 3반' },
@@ -52,13 +52,13 @@ function App() {
   const [serverError, setServerError] = useState('')
   const [teachers, setTeachers] = useState([])
 
-  useEffect(() => firebaseUser ? listenTasks(items => { if (items.length) setTasks(items) }, error => setServerError(error.message)) : () => {}, [firebaseUser])
+  useEffect(() => firebaseUser ? listenTasks(setTasks, error => setServerError(error.message), { admin: firebaseUser.role === 'admin', classNames: firebaseUser.role === 'student' ? [firebaseUser.className] : firebaseUser.classNames }) : () => {}, [firebaseUser])
   useEffect(() => firebaseUser ? listenClasses(items => { if (items.length) setClasses(items.map(item => item.name)) }, error => setServerError(error.message)) : () => {}, [firebaseUser])
   useEffect(() => firebaseUser?.role === 'admin' ? listenTeachers(setTeachers, error => setServerError(error.message)) : () => {}, [firebaseUser])
   useEffect(() => localStorage.setItem('thinkingcoding-classes', JSON.stringify(classes)), [classes])
 
   const login = async role => {
-    try { const user = await ensureSession(role, USERS[role].name); setFirebaseUser(user); setUserType(role); setServerError('') }
+    try { const user = await loginRegisteredUser(role); setFirebaseUser(user); setUserType(role); setServerError('') }
     catch (error) { setServerError(error.message); throw error }
   }
 
@@ -67,9 +67,11 @@ function App() {
       const user = await ensureSession(profile.accountType, profile.name)
       await saveUserProfile(user.uid, {
         name: profile.name,
-        accountType: profile.accountType,
-        className: profile.className || '',
-        studentNumber: profile.studentNumber || '',
+        ...(profile.accountType === 'student' ? {
+          accountType: 'student',
+          className: profile.className || '',
+          studentNumber: profile.studentNumber || '',
+        } : {}),
       })
       setFirebaseUser({ ...user, name: profile.name, className: profile.className, studentNumber: profile.studentNumber })
       setUserType(profile.accountType)
@@ -99,7 +101,7 @@ function App() {
         </nav>
         <div className="sidebar-bottom">
           <div className="user-mini"><div className="avatar">{user.name[0]}</div><div><b>{user.name}</b><span>{user.className}</span></div><MoreHorizontal size={18}/></div>
-          <button className="logout" onClick={() => setUserType(null)}><LogOut size={18}/>로그아웃</button>
+          <button className="logout" onClick={async() => { await logoutSession(); setFirebaseUser(null); setUserType(null) }}><LogOut size={18}/>로그아웃</button>
         </div>
       </aside>
       {mobileNav && <div className="nav-overlay" onClick={() => setMobileNav(false)} />}
@@ -246,7 +248,15 @@ function TeacherPage({ active, onNavigate, classes, tasks }) {
   const [editTask, setEditTask] = useState(null)
   if(active === '과제 관리') return <div className="page-wrap"><PageTitle eyebrow="수업 준비" title="과제 관리" desc="학생들이 해결할 과제를 만들고 관리하세요." action={<button className="primary" onClick={()=>setModal(true)}><Plus size={18}/> 새 과제</button>}/><AssignmentManagement tasks={tasks} classes={classes} onAdd={()=>setModal(true)}/>{modal&&<TaskModal classes={classes} onClose={()=>setModal(false)}/>}</div>
   if(active === '학생 현황') return <div className="page-wrap"><PageTitle eyebrow="학습 관리" title="학생 현황" desc="학생별 과제 진행 상황을 확인하세요."/><ClassTable full /></div>
+  if(active !== '과제 관리' && active !== '학생 현황') return <TeacherDashboard classes={classes} tasks={tasks} onNavigate={onNavigate} onAdd={()=>setModal(true)} modal={modal} onClose={()=>setModal(false)}/>
   return <div className="page-wrap"><PageTitle eyebrow="9월 13일 일요일" title="수업 대시보드" desc="2학년 3반의 학습 현황을 확인하세요." action={<button className="primary" onClick={()=>setModal(true)}><FilePlus2 size={18}/> 과제 만들기</button>}/><div className="dashboard-stats"><StatCard icon={Users} label="전체 학생" value="28" unit="명" tint="blue"/><StatCard icon={ClipboardCheck} label="이번 주 제출" value="21" unit="건" tint="green"/><StatCard icon={CheckCircle2} label="평균 정답률" value="76" unit="%" tint="yellow"/><StatCard icon={MessageCircle} label="오늘 질문" value="14" unit="개" tint="purple"/></div><div className="teacher-grid"><section className="panel dashboard-panel"><div className="section-title compact"><div><h2>2학년 3반 제출 현황</h2><p>미로를 탈출하는 고양이</p></div><button className="text-button" onClick={()=>onNavigate('학생 현황')}>전체 보기 <ArrowRight size={16}/></button></div><ClassTable/></section><section className="panel activity"><div className="section-title compact"><div><h2>최근 활동</h2><p>실시간 학습 소식</p></div></div>{[['김민준','과제를 제출했어요.','10:24'],['박서윤','질문을 남겼어요.','09:51'],['정하은','과제를 수정했어요.','어제'],['윤지호','과제를 제출했어요.','어제']].map((a,i)=><div className="activity-row" key={i}><div className="avatar alt">{a[0][0]}</div><div><b>{a[0]}</b><span>{a[1]}</span></div><time>{a[2]}</time></div>)}</section></div>{modal&&<TaskModal classes={classes} onClose={()=>setModal(false)}/>}</div>
+}
+
+function TeacherDashboard({classes,tasks,onNavigate,onAdd,modal,onClose}) {
+  const [selectedClass,setSelectedClass]=useState(classes[0]||'')
+  useEffect(()=>{if(!classes.includes(selectedClass))setSelectedClass(classes[0]||'')},[classes,selectedClass])
+  const classTasks=tasks.filter(t=>t.classNames?.includes(selectedClass))
+  return <div className="page-wrap"><PageTitle eyebrow="수업 현황" title="수업 대시보드" desc={`${selectedClass || '담당 학급'}의 학습 현황을 확인하세요.`} action={<button className="primary" onClick={onAdd}><FilePlus2 size={18}/> 과제 만들기</button>}/><div className="dashboard-class-filter"><label>담당 학급<select value={selectedClass} onChange={e=>setSelectedClass(e.target.value)}>{classes.map(c=><option key={c}>{c}</option>)}</select></label><span>관리자가 배정한 학급만 표시됩니다.</span></div><div className="dashboard-stats"><StatCard icon={Users} label="담당 학급" value={String(classes.length)} unit="개" tint="blue"/><StatCard icon={ClipboardCheck} label="등록 과제" value={String(classTasks.length)} unit="건" tint="green"/><StatCard icon={CheckCircle2} label="제출 확인" value="0" unit="건" tint="yellow"/><StatCard icon={MessageCircle} label="학생 질문" value="0" unit="개" tint="purple"/></div><section className="panel dashboard-panel"><div className="section-title compact"><div><h2>{selectedClass} 과제</h2><p>{classTasks.length ? `${classTasks.length}개의 과제가 등록되어 있습니다.` : '등록된 과제가 없습니다.'}</p></div><button className="text-button" onClick={()=>onNavigate('과제 관리')}>과제 관리 <ArrowRight size={16}/></button></div>{classTasks.length?<div className="task-grid">{classTasks.map(t=><TaskCard key={t.id} task={t} onClick={()=>onNavigate('과제 관리')}/>)}</div>:<div className="empty-state">이 학급에 등록된 과제가 없습니다.</div>}</section>{modal&&<TaskModal classes={classes} onClose={onClose}/>}</div>
 }
 
 function PageTitle({eyebrow,title,desc,action}) { return <div className="page-heading row"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{desc}</p></div>{action}</div> }

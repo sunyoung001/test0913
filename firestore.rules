@@ -5,9 +5,16 @@ service cloud.firestore {
     function userRole() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role; }
     function isAdmin() { return signedIn() && request.auth.token.email == 'su1413911@gmail.com'; }
     function isTeacher() { return isAdmin() || (signedIn() && userRole() == 'teacher'); }
+    function teacherInvite() { return get(/databases/$(database)/documents/teacherInvites/$(request.auth.token.email)).data; }
     function canManageTask(data) {
       return isAdmin() || (isTeacher()
-        && data.classNames.hasOnly(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.classNames));
+        && data.classNames.hasOnly(teacherInvite().classNames));
+    }
+    function canReadTask(data) {
+      return isAdmin()
+        || (isTeacher() && data.classNames.hasAny(teacherInvite().classNames))
+        || (signedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountType == 'student'
+            && data.classNames.hasAny([get(/databases/$(database)/documents/users/$(request.auth.uid)).data.className]));
     }
     function hasTeacherInvite() {
       return signedIn()
@@ -29,7 +36,7 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
     match /tasks/{taskId} {
-      allow read: if signedIn();
+      allow read: if canReadTask(resource.data);
       allow create, update: if canManageTask(request.resource.data);
       allow delete: if canManageTask(resource.data);
     }

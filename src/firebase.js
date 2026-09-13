@@ -1,8 +1,8 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth'
 import {
   addDoc, collection, deleteDoc, doc, getDoc, getFirestore, onSnapshot, orderBy, query,
-  serverTimestamp, setDoc, updateDoc,
+  serverTimestamp, setDoc, updateDoc, where,
 } from 'firebase/firestore'
 import { getDownloadURL, getStorage, ref, uploadBytesResumable } from 'firebase/storage'
 
@@ -39,6 +39,8 @@ export async function ensureSession(role, name) {
   const email = credential.user.email?.toLowerCase()
   const invite = email ? await getDoc(doc(db, 'teacherInvites', email)) : null
   const approvedTeacher = invite?.exists() ? invite.data() : null
+  if (role === 'teacher' && !approvedTeacher) throw new Error('관리자가 등록한 교사 명단에서 이 Google 계정을 찾을 수 없습니다.')
+  if (role === 'admin' && email !== 'su1413911@gmail.com') throw new Error('등록된 관리자 계정이 아닙니다.')
   await setDoc(doc(db, 'users', credential.user.uid), {
     name: credential.user.displayName || name,
     email,
@@ -53,6 +55,32 @@ export async function ensureSession(role, name) {
     role: email === 'su1413911@gmail.com' ? 'admin' : approvedTeacher ? 'teacher' : 'student',
     classNames: approvedTeacher?.classNames || [],
   }
+}
+
+export async function loginRegisteredUser(screenRole) {
+  if (!firebaseReady) throw new Error('Firebase가 연결되지 않았습니다.')
+  const credential = auth.currentUser ? { user: auth.currentUser } : await signInWithPopup(auth, new GoogleAuthProvider())
+  const email = credential.user.email?.toLowerCase()
+  const profileSnapshot = await getDoc(doc(db, 'users', credential.user.uid))
+  if (email === 'su1413911@gmail.com' && screenRole === 'admin') {
+    await setDoc(doc(db, 'users', credential.user.uid), { name: credential.user.displayName || '관리자', email, updatedAt: serverTimestamp() }, { merge: true })
+    return { uid: credential.user.uid, name: credential.user.displayName || '관리자', email, role: 'admin', classNames: [] }
+  }
+  if (!profileSnapshot.exists()) throw new Error('회원가입되지 않은 계정입니다. 먼저 회원가입을 진행해 주세요.')
+  const profile = profileSnapshot.data()
+  const actualRole = email === 'su1413911@gmail.com' ? 'admin' : profile.role === 'teacher' ? 'teacher' : profile.accountType === 'student' ? 'student' : null
+  if (actualRole !== screenRole) throw new Error(`이 계정은 ${screenRole === 'teacher' ? '교사' : screenRole === 'student' ? '학생' : '관리자'}로 등록되어 있지 않습니다.`)
+  let assignedClasses = profile.classNames || []
+  if (actualRole === 'teacher') {
+    const invite = await getDoc(doc(db, 'teacherInvites', email))
+    if (!invite.exists()) throw new Error('교사 권한이 회수되었거나 등록되지 않았습니다.')
+    assignedClasses = invite.data().classNames || []
+  }
+  return { uid: credential.user.uid, name: profile.name || credential.user.displayName, email, role: actualRole, className: profile.className || '', classNames: assignedClasses }
+}
+
+export async function logoutSession() {
+  if (auth?.currentUser) await signOut(auth)
 }
 
 export function listenTeachers(callback, onError) {
@@ -81,9 +109,12 @@ export async function saveUserProfile(userId, profile) {
   }, { merge: true })
 }
 
-export function listenTasks(callback, onError) {
+export function listenTasks(callback, onError, access = {}) {
   if (!firebaseReady) return () => {}
-  return onSnapshot(query(collection(db, 'tasks'), orderBy('createdAt', 'desc')), snapshot => {
+  const constraints = []
+  if (!access.admin && access.classNames?.length) constraints.push(access.classNames.length === 1 ? where('classNames', 'array-contains', access.classNames[0]) : where('classNames', 'array-contains-any', access.classNames.slice(0, 30)))
+  constraints.push(orderBy('createdAt', 'desc'))
+  return onSnapshot(query(collection(db, 'tasks'), ...constraints), snapshot => {
     callback(snapshot.docs.map(item => ({ id: item.id, ...item.data() })))
   }, onError)
 }
