@@ -1,4 +1,4 @@
-const PROGRAMMING_ONLY_MESSAGE = '프로그래밍과 관련된 질문만 할 수 있어요. 엔트리 블록, 코드, 오류, 알고리즘에 대해 질문해 주세요.'
+const PROGRAMMING_ONLY_MESSAGE = '코딩 수업과 과제에 관련된 질문만 할 수 있어요. 엔트리 블록, 코드, 오류, 과제 내용에 대해 질문해 주세요.'
 
 const systemInstruction = `당신은 한국 중학생의 코딩 수업과 과제 해결을 돕는 튜터입니다.
 반드시 다른 문장이나 마크다운 없이 {"isProgramming":true 또는 false,"answer":"답변"} 형식의 JSON 하나만 출력하세요.
