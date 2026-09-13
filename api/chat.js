@@ -27,7 +27,8 @@ function extractJson(text) {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: '허용되지 않은 요청입니다.' })
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
+  const rawApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
+  const apiKey = rawApiKey?.trim().replace(/^['"]|['"]$/g, '')
   if (!apiKey) return res.status(503).json({ error: '질문 서버의 환경 변수가 적용되지 않았습니다. GEMINI_API_KEY를 Production 환경에 저장한 뒤 다시 배포해 주세요.' })
 
   const message = typeof req.body?.message === 'string' ? req.body.message.trim().slice(0, 3000) : ''
@@ -74,7 +75,7 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error('Gemini request failed:', error?.message || error)
     const message = error?.name === 'AbortError' ? '답변 시간이 오래 걸리고 있습니다. 잠시 후 다시 질문해 주세요.' : '답변을 만드는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
-    return res.status(502).json({ error: message })
+    return res.status(502).json({ error: message, diagnostic: String(error?.message || 'unknown').slice(0, 300) })
   } finally {
     clearTimeout(timer)
   }
