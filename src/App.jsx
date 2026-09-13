@@ -64,7 +64,7 @@ function App() {
 
   const register = async profile => {
     try {
-      const user = await ensureSession(profile.accountType, profile.name)
+      const user = await ensureSession(profile.accountType, profile.name, profile.credentials)
       await saveUserProfile(user.uid, {
         name: profile.name,
         ...(profile.accountType === 'student' ? {
@@ -127,18 +127,22 @@ function AuthPage({ onLogin, onRegister, classes }) {
   const [authError, setAuthError] = useState('')
   const [adminId, setAdminId] = useState('')
   const [adminPassword, setAdminPassword] = useState('')
-  const submit = async e => {
-    e.preventDefault()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const authenticate = async (useGoogle = false) => {
     if (mode === 'signup' && !terms) return alert('개인정보 수집 및 이용에 동의해 주세요.')
     try {
       setLoading(true)
       setAuthError('')
-      if (mode === 'login') await onLogin(role, role === 'admin' ? { id: adminId, password: adminPassword } : undefined)
-      else await onRegister({ accountType: role, name, className: role === 'student' ? className : '', studentNumber: role === 'student' ? studentNumber : '' })
+      const credentials = role === 'admin' ? { id: adminId, password: adminPassword } : useGoogle ? undefined : { email, password }
+      if (mode === 'login') await onLogin(role, credentials)
+      else await onRegister({ accountType: role, name, className: role === 'student' ? className : '', studentNumber: role === 'student' ? studentNumber : '', credentials })
     } catch (error) {
-      setAuthError(error.code === 'auth/popup-closed-by-user' ? 'Google 계정 선택이 취소되었습니다.' : `인증에 실패했습니다: ${error.message}`)
+      const friendly = error.code === 'auth/email-already-in-use' ? '이미 가입된 이메일입니다. 로그인 화면을 이용해 주세요.' : error.code === 'auth/invalid-credential' ? '이메일 또는 비밀번호가 올바르지 않습니다.' : error.code === 'auth/weak-password' ? '비밀번호는 6자 이상이어야 합니다.' : error.code === 'auth/popup-closed-by-user' ? 'Google 계정 선택이 취소되었습니다.' : error.message
+      setAuthError(friendly)
     } finally { setLoading(false) }
   }
+  const submit = e => { e.preventDefault(); authenticate(false) }
   return <div className="login-page">
     <section className="login-intro">
       <div className="login-brand"><Logo/><span>생각코딩</span></div>
@@ -154,13 +158,15 @@ function AuthPage({ onLogin, onRegister, classes }) {
           {(mode==='login'?[['student','학생'],['teacher','교사'],['admin','관리자']]:[['student','학생'],['teacher','교사']]).map(([key,label]) => <button type="button" key={key} className={role===key?'selected':''} onClick={()=>setRole(key)}>{label}</button>)}
         </div>
         {mode==='login'&&role==='admin'&&<div className="admin-login-fields"><label>아이디<input required autoComplete="username" value={adminId} onChange={e=>setAdminId(e.target.value)} placeholder="admin"/></label><label>비밀번호<input required type="password" autoComplete="current-password" value={adminPassword} onChange={e=>setAdminPassword(e.target.value)} placeholder="비밀번호를 입력하세요"/></label></div>}
+        {role!=='admin'&&<div className="email-auth-fields"><label>이메일 <Required/><input required type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="name@example.com"/></label><label>비밀번호 <Required/><input required minLength={6} type="password" autoComplete={mode==='login'?'current-password':'new-password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="6자 이상 입력하세요"/></label></div>}
         {mode==='signup'&&<>
           <label>이름 <Required/><input required value={name} onChange={e=>setName(e.target.value)} placeholder="이름을 입력하세요"/></label>
           {role==='student'?<div className="form-row"><label>학급 <Required/><select required value={className} onChange={e=>setClassName(e.target.value)}>{classes.map(c=><option key={c}>{c}</option>)}</select></label><label>학번 <Required/><input required value={studentNumber} onChange={e=>setStudentNumber(e.target.value)} placeholder="예: 2301"/></label></div>:<div className="teacher-signup-note"><ShieldCheck size={19}/><p>관리자가 등록한 Google 이메일과 일치해야 교사 권한이 활성화됩니다.</p></div>}
           <label className="terms-check"><input type="checkbox" checked={terms} onChange={e=>setTerms(e.target.checked)}/><span>회원가입을 위한 개인정보 수집 및 이용에 동의합니다.</span></label>
         </>}
         {authError&&<div className="auth-error">{authError}</div>}
-        <button className="primary big" disabled={loading} type="submit">{loading?'로그인 확인 중...':mode==='login'&&role==='admin'?'관리자 로그인':mode==='login'?'Google 계정으로 로그인':'Google 계정으로 가입'}{!loading&&<ArrowRight size={18}/>}</button>
+        <button className="primary big" disabled={loading} type="submit">{loading?'계정 확인 중...':mode==='login'&&role==='admin'?'관리자 로그인':mode==='login'?'이메일로 로그인':'이메일로 회원가입'}{!loading&&<ArrowRight size={18}/>}</button>
+        {role!=='admin'&&<><div className="auth-divider"><span>또는</span></div><button className="google-auth-button" disabled={loading} type="button" onClick={()=>authenticate(true)}>G&nbsp;&nbsp; Google 계정으로 계속</button></>}
         <p className="demo-note">{mode==='login'&&role==='admin'?'관리자 전용 계정으로 로그인합니다.':mode==='signup'&&role==='teacher'?'교사 권한은 관리자 승인 후 사용할 수 있습니다.':'Google 인증 창에서 사용할 계정을 선택해 주세요.'}</p>
       </form>
     </section>

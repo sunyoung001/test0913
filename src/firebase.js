@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth, GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth'
+import { createUserWithEmailAndPassword, deleteUser, getAuth, GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth'
 import {
   addDoc, collection, deleteDoc, doc, getDoc, getFirestore, onSnapshot, orderBy, query,
   serverTimestamp, setDoc, updateDoc, where,
@@ -33,13 +33,18 @@ function uploadWithTimeout(fileRef, file, metadata = undefined) {
   })
 }
 
-export async function ensureSession(role, name) {
+export async function ensureSession(role, name, credentials = {}) {
   if (!firebaseReady) return null
-  const credential = auth.currentUser ? { user: auth.currentUser } : await signInWithPopup(auth, new GoogleAuthProvider())
+  const credential = credentials.email
+    ? await createUserWithEmailAndPassword(auth, credentials.email.trim().toLowerCase(), credentials.password)
+    : auth.currentUser ? { user: auth.currentUser } : await signInWithPopup(auth, new GoogleAuthProvider())
   const email = credential.user.email?.toLowerCase()
   const invite = email ? await getDoc(doc(db, 'teacherInvites', email)) : null
   const approvedTeacher = invite?.exists() ? invite.data() : null
-  if (role === 'teacher' && !approvedTeacher) throw new Error('관리자가 등록한 교사 명단에서 이 Google 계정을 찾을 수 없습니다.')
+  if (role === 'teacher' && !approvedTeacher) {
+    if (credentials.email) await deleteUser(credential.user)
+    throw new Error('관리자가 등록한 교사 명단에서 이 이메일을 찾을 수 없습니다.')
+  }
   if (role === 'admin' && !['admin@test0913.app','su1413911@gmail.com'].includes(email)) throw new Error('등록된 관리자 계정이 아닙니다.')
   await setDoc(doc(db, 'users', credential.user.uid), {
     name: credential.user.displayName || name,
@@ -62,7 +67,9 @@ export async function loginRegisteredUser(screenRole, credentials = {}) {
   if (screenRole === 'admin' && credentials.id !== 'admin') throw new Error('관리자 아이디 또는 비밀번호가 올바르지 않습니다.')
   const credential = screenRole === 'admin'
     ? await signInWithEmailAndPassword(auth, 'admin@test0913.app', credentials.password || '')
-    : auth.currentUser ? { user: auth.currentUser } : await signInWithPopup(auth, new GoogleAuthProvider())
+    : credentials.email
+      ? await signInWithEmailAndPassword(auth, credentials.email.trim().toLowerCase(), credentials.password || '')
+      : auth.currentUser ? { user: auth.currentUser } : await signInWithPopup(auth, new GoogleAuthProvider())
   const email = credential.user.email?.toLowerCase()
   const profileSnapshot = await getDoc(doc(db, 'users', credential.user.uid))
   if (['admin@test0913.app','su1413911@gmail.com'].includes(email) && screenRole === 'admin') {
