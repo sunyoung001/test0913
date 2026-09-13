@@ -246,7 +246,8 @@ function TaskWorkspace({ task, student, onBack, onUpdate }) {
     setMessages(current=>[...current,{type:'me',text:question,image}])
     setMessage('');setQuestionImage(null);setImageError('');setChatLoading(true)
     try{
-      const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:question,image:image?.url,assignment:{title:task.title,description:task.description,hint:task.hint}})})
+      const history=messages.slice(-6).map(item=>({role:item.type==='me'?'user':'assistant',text:item.text||''}))
+      const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:question,image:image?.url,history,assignment:{title:task.title,description:task.description,hint:task.hint}})})
       const data=await response.json().catch(()=>({}))
       if(!response.ok) throw new Error(data.error||'답변을 받지 못했습니다.')
       setMessages(current=>[...current,{type:'guide',text:data.answer}])
