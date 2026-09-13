@@ -38,3 +38,6 @@ h1,h2,h3,.brand,.login-brand,.mobile-brand,.primary,.sidebar nav button{font-fam
 .file-drop{position:relative}
 .file-remove{position:absolute;top:10px;right:10px;border:0;background:#fff;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:var(--muted);box-shadow:0 1px 4px rgba(0,0,0,.12)}
 .file-remove:hover{color:#ae4337}
+.secondary{border:1px solid var(--green);background:#fff;color:var(--green);border-radius:10px;padding:12px 18px;display:inline-flex;align-items:center;justify-content:center;gap:9px;font-weight:800;width:100%;margin-top:15px}
+.secondary:hover{background:var(--mint)}
+.secondary:disabled{opacity:.6;cursor:not-allowed}

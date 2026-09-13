@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app'
 import { createUserWithEmailAndPassword, getAuth, GoogleAuthProvider, sendPasswordResetEmail, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth'
 import {
-  addDoc, Bytes, collection, deleteDoc, doc, getDoc, getFirestore, onSnapshot, orderBy, query,
+  addDoc, Bytes, collection, deleteDoc, doc, documentId, getDoc, getDocs, getFirestore, onSnapshot, orderBy, query,
   serverTimestamp, setDoc, updateDoc, where, writeBatch,
 } from 'firebase/firestore'
 
@@ -185,7 +185,7 @@ export async function saveClass(name) {
   await setDoc(doc(db, 'classes', id), { name, createdAt: serverTimestamp() })
 }
 
-export async function saveTask({ task, title, classNames, deadline, description, criteria, hint, answerFile }) {
+export async function saveTask({ task, title, classNames, deadline, description, criteria, hint, codeFile, answerFile }) {
   const taskRef = task?.id ? doc(db, 'tasks', String(task.id)) : doc(collection(db, 'tasks'))
   let answerFileUrl = task?.answerFileUrl || ''
   let answerFileName = task?.answerFileName || ''
@@ -194,10 +194,30 @@ export async function saveTask({ task, title, classNames, deadline, description,
     answerFileUrl = `firestore://${savedFile.id}`
     answerFileName = savedFile.name
   }
-  const data = { title, classNames, deadline, description, criteria, hint, answerFileUrl, answerFileName, updatedAt: serverTimestamp() }
+  let codeFileUrl = task?.codeFileUrl || ''
+  let codeFileName = task?.codeFileName || ''
+  if (codeFile) {
+    const savedFile = await saveFileToFirestore(codeFile, 'code', auth.currentUser.uid)
+    codeFileUrl = `firestore://${savedFile.id}`
+    codeFileName = savedFile.name
+  }
+  const data = { title, classNames, deadline, description, criteria, hint, answerFileUrl, answerFileName, codeFileUrl, codeFileName, updatedAt: serverTimestamp() }
   if (task?.id) await updateDoc(taskRef, data)
   else await setDoc(taskRef, { ...data, subject: '블록 프로그래밍', status: 'todo', attempts: 0, createdAt: serverTimestamp() })
   return taskRef.id
+}
+
+export async function fetchStoredFile(fileId) {
+  const fileDoc = await getDoc(doc(db, 'files', fileId))
+  if (!fileDoc.exists()) throw new Error('파일을 찾을 수 없습니다.')
+  const meta = fileDoc.data()
+  const chunksSnapshot = await getDocs(query(collection(db, 'files', fileId, 'chunks'), orderBy(documentId())))
+  const parts = chunksSnapshot.docs.map(item => item.data().data.toUint8Array())
+  const totalLength = parts.reduce((sum, part) => sum + part.length, 0)
+  const merged = new Uint8Array(totalLength)
+  let offset = 0
+  for (const part of parts) { merged.set(part, offset); offset += part.length }
+  return { blob: new Blob([merged], { type: meta.type || 'application/octet-stream' }), name: meta.name || 'file' }
 }
 
 export async function submitEntry({ taskId, file, explanation, student, resultStatus }) {
