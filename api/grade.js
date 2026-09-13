@@ -3,6 +3,7 @@ const systemInstruction = `당신은 한국 중학생의 엔트리(블록 코딩
 "학생 프로젝트 코드"는 엔트리 프로젝트 파일(project.json)의 내용으로, 오브젝트·변수·블록 스크립트 정보를 담고 있습니다.
 "정답 기준"에서 요구하는 동작이 블록 스크립트에 실제로 구현되어 있는지 분석해서 만족하면 correct를 true로, 만족하지 않으면 false로 판단하세요.
 정답 기준에서 언급하지 않은 사소한 차이(오브젝트 이름, 배경, 변수 이름, 메시지 문구 등)는 감점하지 마세요.
+증가·조건 검사처럼 같은 반복 안에 있는 블록들의 순서를 정답과 다르게 배치해도 전체적인 반복 구조와 의도한 결과가 같다면(예: 매초 값이 증가하고 특정 값을 넘으면 초기화되는 로직), 초기화 시점이 한 틱 정도 어긋나는 등의 사소한 차이는 감점하지 말고 correct로 판단하세요. 반복·조건 구조 자체가 빠졌거나 정답 기준이 요구하는 결과와 근본적으로 다르게 동작하는 경우에만 false로 판단하세요.
 feedback은 한국어로 2~4문장, 학생이 이해할 수 있게 구체적으로 무엇을 잘했는지 또는 무엇을 고쳐야 하는지 설명하세요.
 correct가 false일 때도 정답 코드를 그대로 알려주지 말고 확인해야 할 부분에 대한 힌트만 주세요.`
 
@@ -44,7 +45,7 @@ export default async function handler(req, res) {
       signal: controller.signal,
       body: JSON.stringify({
         model,
-        temperature: 0.2,
+        temperature: 0,
         max_tokens: 1024,
         response_format: { type: 'json_object' },
         messages: [
