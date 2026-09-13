@@ -49,5 +49,16 @@ service cloud.firestore {
       allow read: if signedIn() && (resource.data.studentId == request.auth.uid || isTeacher());
       allow update: if isTeacher();
     }
+    match /files/{fileId} {
+      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid
+                    && (request.resource.data.kind == 'submission' || isTeacher());
+      allow read: if signedIn() && (resource.data.ownerId == request.auth.uid || isTeacher());
+      match /chunks/{chunkId} {
+        allow create: if signedIn()
+          && get(/databases/$(database)/documents/files/$(fileId)).data.ownerId == request.auth.uid;
+        allow read: if signedIn()
+          && (get(/databases/$(database)/documents/files/$(fileId)).data.ownerId == request.auth.uid || isTeacher());
+      }
+    }
   }
 }

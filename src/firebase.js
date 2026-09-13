@@ -1,10 +1,9 @@
 import { initializeApp } from 'firebase/app'
 import { createUserWithEmailAndPassword, deleteUser, getAuth, GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth'
 import {
-  addDoc, collection, deleteDoc, doc, getDoc, getFirestore, onSnapshot, orderBy, query,
-  serverTimestamp, setDoc, updateDoc, where,
+  addDoc, Bytes, collection, deleteDoc, doc, getDoc, getFirestore, onSnapshot, orderBy, query,
+  serverTimestamp, setDoc, updateDoc, where, writeBatch,
 } from 'firebase/firestore'
-import { getDownloadURL, getStorage, ref, uploadBytesResumable } from 'firebase/storage'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyD2fRWQcr3aXgFkqNbz0YhxwZRzq9ub7ec',
@@ -19,18 +18,29 @@ export const firebaseReady = Object.values(firebaseConfig).every(Boolean)
 const app = firebaseReady ? initializeApp(firebaseConfig) : null
 export const auth = app ? getAuth(app) : null
 export const db = app ? getFirestore(app) : null
-export const storage = app ? getStorage(app) : null
+const FIRESTORE_FILE_LIMIT = 10 * 1024 * 1024
+const CHUNK_SIZE = 600 * 1024
 
-function uploadWithTimeout(fileRef, file, metadata = undefined) {
-  return new Promise((resolve, reject) => {
-    const task = uploadBytesResumable(fileRef, file, metadata)
-    const timer = setTimeout(() => {
-      task.cancel()
-      reject(new Error('Firebase Storage가 준비되지 않았거나 응답하지 않습니다. Firebase Console에서 Storage를 생성해 주세요.'))
-    }, 20000)
-    task.then(snapshot => { clearTimeout(timer); resolve(snapshot) })
-      .catch(error => { clearTimeout(timer); reject(error) })
+async function saveFileToFirestore(file, kind, ownerId) {
+  if (file.size > FIRESTORE_FILE_LIMIT) throw new Error('파일은 10MB 이하만 업로드할 수 있습니다.')
+  const fileRef = doc(collection(db, 'files'))
+  const buffer = await file.arrayBuffer()
+  const chunks = []
+  for (let offset = 0; offset < buffer.byteLength; offset += CHUNK_SIZE) {
+    chunks.push(new Uint8Array(buffer.slice(offset, offset + CHUNK_SIZE)))
+  }
+  await setDoc(fileRef, {
+    name: file.name, size: file.size, type: file.type || 'application/octet-stream',
+    kind, ownerId, chunkCount: chunks.length, createdAt: serverTimestamp(),
   })
+  for (let start = 0; start < chunks.length; start += 400) {
+    const batch = writeBatch(db)
+    chunks.slice(start, start + 400).forEach((chunk, index) => {
+      batch.set(doc(db, 'files', fileRef.id, 'chunks', String(start + index).padStart(5, '0')), { data: Bytes.fromUint8Array(chunk) })
+    })
+    await batch.commit()
+  }
+  return { id: fileRef.id, name: file.name }
 }
 
 export async function ensureSession(role, name, credentials = {}) {
@@ -146,10 +156,9 @@ export async function saveTask({ task, title, classNames, deadline, description,
   let answerFileUrl = task?.answerFileUrl || ''
   let answerFileName = task?.answerFileName || ''
   if (answerFile) {
-    const fileRef = ref(storage, `answers/${taskRef.id}/${Date.now()}-${answerFile.name}`)
-    await uploadWithTimeout(fileRef, answerFile)
-    answerFileUrl = await getDownloadURL(fileRef)
-    answerFileName = answerFile.name
+    const savedFile = await saveFileToFirestore(answerFile, 'answer', auth.currentUser.uid)
+    answerFileUrl = `firestore://${savedFile.id}`
+    answerFileName = savedFile.name
   }
   const data = { title, classNames, deadline, description, criteria, hint, answerFileUrl, answerFileName, updatedAt: serverTimestamp() }
   if (task?.id) await updateDoc(taskRef, data)
@@ -159,12 +168,11 @@ export async function saveTask({ task, title, classNames, deadline, description,
 
 export async function submitEntry({ taskId, file, explanation, student }) {
   const submissionRef = doc(collection(db, 'submissions'))
-  const fileRef = ref(storage, `submissions/${taskId}/${student.uid}/${Date.now()}-${file.name}`)
-  await uploadWithTimeout(fileRef, file, { contentType: file.type || 'application/octet-stream' })
-  const fileUrl = await getDownloadURL(fileRef)
+  const savedFile = await saveFileToFirestore(file, 'submission', student.uid)
   await setDoc(submissionRef, {
     taskId: String(taskId), studentId: student.uid, studentName: student.name,
-    fileName: file.name, fileUrl, explanation, status: 'submitted', submittedAt: serverTimestamp(),
+    fileName: file.name, fileUrl: `firestore://${savedFile.id}`, fileId: savedFile.id,
+    explanation, status: 'submitted', submittedAt: serverTimestamp(),
   })
   return submissionRef.id
 }
