@@ -76,7 +76,7 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error('Gemini request failed:', error?.message || error)
     const message = error?.name === 'AbortError' ? '답변 시간이 오래 걸리고 있습니다. 잠시 후 다시 질문해 주세요.' : '답변을 만드는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
-    return res.status(502).json({ error: message, diagnostic: String(error?.message || 'unknown').slice(0, 300) })
+    return res.status(502).json({ error: message })
   } finally {
     clearTimeout(timer)
   }
