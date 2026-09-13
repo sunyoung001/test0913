@@ -39,10 +39,9 @@ h1,h2,h3,.brand,.login-brand,.mobile-brand,.primary,.sidebar nav button{font-fam
 .file-remove{position:absolute;top:10px;right:10px;border:0;background:#fff;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:var(--muted);box-shadow:0 1px 4px rgba(0,0,0,.12)}
 .file-remove:hover{color:#ae4337}
 .file-drop.is-locked{cursor:default}
-.guest-panel>div{display:flex;gap:8px}
-.guest-panel input{flex:1;border:1px solid #d9dfda;border-radius:10px;padding:13px 14px;background:#fff;color:var(--ink)}
-.guest-panel button{border:1px solid var(--green);background:#fff;color:var(--green);border-radius:10px;padding:0 18px;font-weight:800;white-space:nowrap}
-.guest-panel button:hover{background:var(--mint)}
+.guest-buttons{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.guest-buttons button{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:10px;padding:11px 6px;font-size:12px;font-weight:700}
+.guest-buttons button:hover{background:var(--mint);border-color:var(--green)}
 .secondary{border:1px solid var(--green);background:#fff;color:var(--green);border-radius:10px;padding:12px 18px;display:inline-flex;align-items:center;justify-content:center;gap:9px;font-weight:800;width:100%;margin-top:15px}
 .secondary:hover{background:var(--mint)}
 .secondary:disabled{opacity:.6;cursor:not-allowed}

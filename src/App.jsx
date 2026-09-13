@@ -166,14 +166,6 @@ function AuthPage({ onLogin, onRegister, onGuest, classes }) {
   const [adminPassword, setAdminPassword] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [guestPassword, setGuestPassword] = useState('')
-  const [guestError, setGuestError] = useState('')
-  const startGuest = e => {
-    e.preventDefault()
-    if (guestPassword !== '1234') { setGuestError('비밀번호가 올바르지 않습니다.'); return }
-    setGuestError('')
-    onGuest('student')
-  }
   const authenticate = async (useGoogle = false) => {
     if (mode === 'signup' && !terms) return alert('개인정보 수집 및 이용에 동의해 주세요.')
     try {
@@ -226,11 +218,12 @@ function AuthPage({ onLogin, onRegister, onGuest, classes }) {
         {role!=='admin'&&<><div className="auth-divider"><span>또는</span></div><button className="google-auth-button" disabled={loading} type="button" onClick={()=>authenticate(true)}>G&nbsp;&nbsp; Google 계정으로 계속</button></>}
         <p className="demo-note">{mode==='login'&&role==='admin'?'관리자 전용 계정으로 로그인합니다.':mode==='signup'&&role==='teacher'?'교사 권한은 관리자 승인 후 사용할 수 있습니다.':'Google 인증 창에서 사용할 계정을 선택해 주세요.'}</p>
         <div className="auth-divider"><span>계정 없이 둘러보기</span></div>
-        <div className="guest-panel">
-          <div><input value={guestPassword} onChange={e=>{setGuestPassword(e.target.value);setGuestError('')}} placeholder="체험 비밀번호" /><button type="button" onClick={startGuest}>체험하기</button></div>
-          {guestError&&<p className="field-error">{guestError}</p>}
-          <p className="demo-note">비밀번호 1234를 입력하면 계정 없이 체험할 수 있어요. 체험 모드에서는 화면만 둘러볼 수 있고 저장, 승인, 삭제는 되지 않아요.</p>
+        <div className="guest-buttons">
+          <button type="button" onClick={()=>onGuest('student')}>학생 체험</button>
+          <button type="button" onClick={()=>onGuest('teacher')}>교사 체험</button>
+          <button type="button" onClick={()=>onGuest('admin')}>관리자 체험</button>
         </div>
+        <p className="demo-note">체험 모드에서는 화면만 둘러볼 수 있고 저장, 승인, 삭제는 되지 않아요.</p>
       </form>
     </section>
   </div>
