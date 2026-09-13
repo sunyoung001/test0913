@@ -148,12 +148,12 @@ function AuthPage({ onLogin, onRegister, classes }) {
     </section>
     <section className="login-panel">
       <form className="login-card signup-card" onSubmit={submit}>
-        <div className="auth-mode"><button type="button" className={mode==='login'?'active':''} onClick={()=>setMode('login')}>로그인</button><button type="button" className={mode==='signup'?'active':''} onClick={()=>{setMode('signup');if(role==='admin')setRole('student')}}>회원가입</button></div>
-        <div><p className="eyebrow">{mode==='login'?'다시 만나 반가워요!':'처음 만나 반가워요!'}</p><h2>{mode==='login'?'로그인':'회원가입'}</h2><p className="muted">{mode==='login'?'Google 계정으로 안전하게 로그인하세요.':'기본 정보를 입력하고 Google 계정을 연결하세요.'}</p></div>
+        {role!=='admin'&&<div className="auth-mode"><button type="button" className={mode==='login'?'active':''} onClick={()=>setMode('login')}>로그인</button><button type="button" className={mode==='signup'?'active':''} onClick={()=>setMode('signup')}>회원가입</button></div>}
+        <div><p className="eyebrow">{role==='admin'?'관리자 전용':mode==='login'?'다시 만나 반가워요!':'처음 만나 반가워요!'}</p><h2>{role==='admin'?'관리자 로그인':mode==='login'?'로그인':'회원가입'}</h2><p className="muted">{role==='admin'?'관리자 아이디와 비밀번호를 입력하세요.':mode==='login'?'Google 계정으로 안전하게 로그인하세요.':'기본 정보를 입력하고 Google 계정을 연결하세요.'}</p></div>
         <div className="role-tabs">
           {(mode==='login'?[['student','학생'],['teacher','교사'],['admin','관리자']]:[['student','학생'],['teacher','교사']]).map(([key,label]) => <button type="button" key={key} className={role===key?'selected':''} onClick={()=>setRole(key)}>{label}</button>)}
         </div>
-        {mode==='login'&&role==='admin'&&<><label>관리자 아이디 <Required/><input required autoComplete="username" value={adminId} onChange={e=>setAdminId(e.target.value)} placeholder="아이디를 입력하세요"/></label><label>비밀번호 <Required/><input required type="password" autoComplete="current-password" value={adminPassword} onChange={e=>setAdminPassword(e.target.value)} placeholder="비밀번호를 입력하세요"/></label></>}
+        {mode==='login'&&role==='admin'&&<div className="admin-login-fields"><label>아이디<input required autoComplete="username" value={adminId} onChange={e=>setAdminId(e.target.value)} placeholder="admin"/></label><label>비밀번호<input required type="password" autoComplete="current-password" value={adminPassword} onChange={e=>setAdminPassword(e.target.value)} placeholder="비밀번호를 입력하세요"/></label></div>}
         {mode==='signup'&&<>
           <label>이름 <Required/><input required value={name} onChange={e=>setName(e.target.value)} placeholder="이름을 입력하세요"/></label>
           {role==='student'?<div className="form-row"><label>학급 <Required/><select required value={className} onChange={e=>setClassName(e.target.value)}>{classes.map(c=><option key={c}>{c}</option>)}</select></label><label>학번 <Required/><input required value={studentNumber} onChange={e=>setStudentNumber(e.target.value)} placeholder="예: 2301"/></label></div>:<div className="teacher-signup-note"><ShieldCheck size={19}/><p>관리자가 등록한 Google 이메일과 일치해야 교사 권한이 활성화됩니다.</p></div>}
