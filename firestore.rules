@@ -16,20 +16,16 @@ service cloud.firestore {
         || (signedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountType == 'student'
             && data.classNames.hasAny([get(/databases/$(database)/documents/users/$(request.auth.uid)).data.className]));
     }
-    function hasTeacherInvite() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/teacherInvites/$(request.auth.token.email))
-        && get(/databases/$(database)/documents/teacherInvites/$(request.auth.token.email)).data.email == request.auth.token.email;
-    }
-
     match /users/{userId} {
-      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin()
+                    || (isTeacher() && resource.data.accountType == 'student'));
       allow create: if signedIn() && request.auth.uid == userId
-                    && (!request.resource.data.keys().hasAny(['role'])
-                    || (request.resource.data.role == 'teacher' && hasTeacherInvite()));
-      allow update: if isAdmin() || (signedIn() && request.auth.uid == userId
-                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
-                    || (request.resource.data.role == 'teacher' && hasTeacherInvite())));
+                    && !request.resource.data.keys().hasAny(['role']);
+      allow update: if isAdmin()
+                    || (signedIn() && request.auth.uid == userId
+                        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'approved', 'classNames']))
+                    || (isTeacher() && resource.data.accountType == 'student'
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approved', 'updatedAt']));
     }
     match /teacherInvites/{email} {
       allow read: if isAdmin() || (signedIn() && request.auth.token.email == email);

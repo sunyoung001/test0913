@@ -6,7 +6,7 @@ import {
   ImagePlus, MoreHorizontal, PencilLine, Plus, Search, Send, ShieldCheck, Sparkles,
   Upload, UserCog, Users, X, XCircle,
 } from 'lucide-react'
-import { ensureSession, firebaseReady, listenClasses, listenTasks, listenTeachers, loginRegisteredUser, logoutSession, removeTeacher, saveClass, saveTask, saveTeacher, saveUserProfile, submitEntry } from './firebase'
+import { approveStudent, approveTeacher, ensureSession, firebaseReady, listenClasses, listenPendingStudents, listenPendingTeachers, listenTasks, listenTeachers, loginRegisteredUser, logoutSession, removeTeacher, resetPassword, saveClass, saveTask, saveTeacher, saveUserProfile, submitEntry } from './firebase'
 
 const USERS = {
   student: { name: '김민준', role: '학생', className: '2학년 3반' },
@@ -51,10 +51,14 @@ function App() {
   })
   const [serverError, setServerError] = useState('')
   const [teachers, setTeachers] = useState([])
+  const [pendingTeachers, setPendingTeachers] = useState([])
+  const [pendingStudents, setPendingStudents] = useState([])
 
   useEffect(() => firebaseUser ? listenTasks(items => { setTasks(items); setServerError('') }, error => setServerError(error.message), { admin: firebaseUser.role === 'admin', classNames: firebaseUser.role === 'student' ? [firebaseUser.className] : firebaseUser.classNames }) : () => {}, [firebaseUser])
   useEffect(() => firebaseUser ? listenClasses(items => { if (items.length) setClasses(items.map(item => item.name)) }, error => setServerError(error.message)) : () => {}, [firebaseUser])
   useEffect(() => firebaseUser?.role === 'admin' ? listenTeachers(setTeachers, error => setServerError(error.message)) : () => {}, [firebaseUser])
+  useEffect(() => firebaseUser?.role === 'admin' ? listenPendingTeachers(setPendingTeachers, error => setServerError(error.message)) : () => {}, [firebaseUser])
+  useEffect(() => firebaseUser?.role === 'teacher' ? listenPendingStudents(firebaseUser.classNames, setPendingStudents, error => setServerError(error.message)) : () => {}, [firebaseUser])
   useEffect(() => localStorage.setItem('thinkingcoding-classes', JSON.stringify(classes)), [classes])
 
   const login = async (role, credentials) => {
@@ -73,10 +77,9 @@ function App() {
           studentNumber: profile.studentNumber || '',
         } : {}),
       })
-      setFirebaseUser({ ...user, name: profile.name, className: profile.className, studentNumber: profile.studentNumber })
-      setUserType(profile.accountType)
+      await logoutSession()
       setServerError('')
-    } catch (error) { setServerError(error.message); setUserType(null); throw error }
+    } catch (error) { setServerError(error.message); throw error }
   }
 
   if (!userType) return <AuthPage onLogin={login} onRegister={register} classes={classes} />
@@ -90,7 +93,7 @@ function App() {
 
   const page = userType === 'student'
     ? (selectedTask ? <TaskWorkspace task={selectedTask} student={firebaseUser} onBack={() => setSelectedTask(null)} onUpdate={(patch) => setTasks(t => t.map(x => x.id === selectedTask.id ? {...x, ...patch} : x))} /> : <StudentHome tasks={tasks} onSelect={setSelectedTask} active={active} onNavigate={setActive} />)
-    : userType === 'teacher' ? <TeacherPage active={active} tasks={tasks} classes={firebaseUser?.role==='admin'||!firebaseUser?.classNames?.length?classes:firebaseUser.classNames} onNavigate={setActive} /> : <AdminPage active={active} teachers={teachers} classes={classes} onClassAdded={name=>setClasses(x=>[...new Set([...x,name])].sort())} />
+    : userType === 'teacher' ? <TeacherPage active={active} tasks={tasks} classes={firebaseUser?.role==='admin'||!firebaseUser?.classNames?.length?classes:firebaseUser.classNames} pendingStudents={pendingStudents} onNavigate={setActive} /> : <AdminPage active={active} teachers={teachers} pendingTeachers={pendingTeachers} classes={classes} onClassAdded={name=>setClasses(x=>[...new Set([...x,name])].sort())} />
 
   return (
     <div className="app-shell">
@@ -136,13 +139,23 @@ function AuthPage({ onLogin, onRegister, classes }) {
       setAuthError('')
       const credentials = role === 'admin' ? { id: adminId, password: adminPassword } : useGoogle ? undefined : { email, password }
       if (mode === 'login') await onLogin(role, credentials)
-      else await onRegister({ accountType: role, name, className: role === 'student' ? className : '', studentNumber: role === 'student' ? studentNumber : '', credentials })
+      else {
+        await onRegister({ accountType: role, name, className: role === 'student' ? className : '', studentNumber: role === 'student' ? studentNumber : '', credentials })
+        setMode('login'); setPassword('')
+        alert(role === 'teacher' ? '회원가입이 완료되었습니다. 관리자 승인 후 로그인할 수 있어요.' : '회원가입이 완료되었습니다. 담당 선생님의 승인 후 로그인할 수 있어요.')
+      }
     } catch (error) {
       const friendly = error.code === 'auth/email-already-in-use' ? '이미 가입된 이메일입니다. 로그인 화면을 이용해 주세요.' : error.code === 'auth/invalid-credential' ? '이메일 또는 비밀번호가 올바르지 않습니다.' : error.code === 'auth/weak-password' ? '비밀번호는 6자 이상이어야 합니다.' : error.code === 'auth/popup-closed-by-user' ? 'Google 계정 선택이 취소되었습니다.' : error.message
       setAuthError(friendly)
     } finally { setLoading(false) }
   }
   const submit = e => { e.preventDefault(); authenticate(false) }
+  const forgotPassword = async () => {
+    if (!email) { setAuthError('비밀번호를 재설정할 이메일을 입력해 주세요.'); return }
+    try { setLoading(true); setAuthError(''); await resetPassword(email); alert(`${email} 주소로 비밀번호 재설정 메일을 보냈습니다.`) }
+    catch (error) { setAuthError(error.code === 'auth/user-not-found' ? '등록되지 않은 이메일입니다.' : error.message) }
+    finally { setLoading(false) }
+  }
   return <div className="login-page">
     <section className="login-intro">
       <div className="login-brand"><Logo/><span>생각코딩</span></div>
@@ -159,9 +172,11 @@ function AuthPage({ onLogin, onRegister, classes }) {
         </div>
         {mode==='login'&&role==='admin'&&<div className="admin-login-fields"><label>아이디<input required autoComplete="username" value={adminId} onChange={e=>setAdminId(e.target.value)} placeholder="admin"/></label><label>비밀번호<input required type="password" autoComplete="current-password" value={adminPassword} onChange={e=>setAdminPassword(e.target.value)} placeholder="비밀번호를 입력하세요"/></label></div>}
         {role!=='admin'&&<div className="email-auth-fields"><label>이메일 <Required/><input required type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="name@example.com"/></label><label>비밀번호 <Required/><input required minLength={6} type="password" autoComplete={mode==='login'?'current-password':'new-password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="6자 이상 입력하세요"/></label></div>}
+        {mode==='login'&&role!=='admin'&&<button type="button" className="text-button forgot-password" disabled={loading} onClick={forgotPassword}>비밀번호를 잊으셨나요?</button>}
         {mode==='signup'&&<>
           <label>이름 <Required/><input required value={name} onChange={e=>setName(e.target.value)} placeholder="이름을 입력하세요"/></label>
-          {role==='student'?<div className="form-row"><label>학급 <Required/><select required value={className} onChange={e=>setClassName(e.target.value)}>{classes.map(c=><option key={c}>{c}</option>)}</select></label><label>학번 <Required/><input required value={studentNumber} onChange={e=>setStudentNumber(e.target.value)} placeholder="예: 2301"/></label></div>:<div className="teacher-signup-note"><ShieldCheck size={19}/><p>관리자가 등록한 Google 이메일과 일치해야 교사 권한이 활성화됩니다.</p></div>}
+          {role==='student'?<div className="form-row"><label>학급 <Required/><select required value={className} onChange={e=>setClassName(e.target.value)}>{classes.map(c=><option key={c}>{c}</option>)}</select></label><label>학번 <Required/><input required value={studentNumber} onChange={e=>setStudentNumber(e.target.value)} placeholder="예: 2301"/></label></div>:null}
+          <div className="teacher-signup-note"><ShieldCheck size={19}/><p>{role==='student'?'담당 선생님이 승인하면 로그인할 수 있어요.':'회원가입 후 관리자가 승인하면 교사 권한이 활성화돼요.'}</p></div>
           <label className="terms-check"><input type="checkbox" checked={terms} onChange={e=>setTerms(e.target.checked)}/><span>회원가입을 위한 개인정보 수집 및 이용에 동의합니다.</span></label>
         </>}
         {authError&&<div className="auth-error">{authError}</div>}
@@ -288,20 +303,26 @@ function QuestionHistory() { return <div className="history-list">{[
   ['미로를 탈출하는 고양이','반복 블록을 몇 번 사용해야 하나요?','오늘 10:18'],['점수 계산기 만들기','점수를 계속 기억하게 하려면 어떻게 하나요?','9월 10일'],['우주선 장애물 피하기','장애물에 닿은 것을 어떻게 알 수 있나요?','9월 8일']
 ].map((q,i)=><div className="history-item" key={i}><div className="history-icon"><MessageCircle/></div><div><span>{q[0]}</span><h3>{q[1]}</h3><p>{q[2]}</p></div><ArrowRight/></div>)}</div> }
 
-function TeacherPage({ active, onNavigate, classes, tasks }) {
+function TeacherPage({ active, onNavigate, classes, tasks, pendingStudents }) {
   const [modal, setModal] = useState(false)
   const [editTask, setEditTask] = useState(null)
   if(active === '과제 관리') return <div className="page-wrap"><PageTitle eyebrow="수업 준비" title="과제 관리" desc="학생들이 해결할 과제를 만들고 관리하세요." action={<button className="primary" onClick={()=>setModal(true)}><Plus size={18}/> 새 과제</button>}/><AssignmentManagement tasks={tasks} classes={classes} onAdd={()=>setModal(true)}/>{modal&&<TaskModal classes={classes} onClose={()=>setModal(false)}/>}</div>
   if(active === '학생 현황') return <div className="page-wrap"><PageTitle eyebrow="학습 관리" title="학생 현황" desc="학생별 과제 진행 상황을 확인하세요."/><ClassTable full /></div>
-  if(active !== '과제 관리' && active !== '학생 현황') return <TeacherDashboard classes={classes} tasks={tasks} onNavigate={onNavigate} onAdd={()=>setModal(true)} modal={modal} onClose={()=>setModal(false)}/>
+  if(active !== '과제 관리' && active !== '학생 현황') return <TeacherDashboard classes={classes} tasks={tasks} pendingStudents={pendingStudents} onNavigate={onNavigate} onAdd={()=>setModal(true)} modal={modal} onClose={()=>setModal(false)}/>
   return <div className="page-wrap"><PageTitle eyebrow="9월 13일 일요일" title="수업 대시보드" desc="2학년 3반의 학습 현황을 확인하세요." action={<button className="primary" onClick={()=>setModal(true)}><FilePlus2 size={18}/> 과제 만들기</button>}/><div className="dashboard-stats"><StatCard icon={Users} label="전체 학생" value="28" unit="명" tint="blue"/><StatCard icon={ClipboardCheck} label="이번 주 제출" value="21" unit="건" tint="green"/><StatCard icon={CheckCircle2} label="평균 정답률" value="76" unit="%" tint="yellow"/><StatCard icon={MessageCircle} label="오늘 질문" value="14" unit="개" tint="purple"/></div><div className="teacher-grid"><section className="panel dashboard-panel"><div className="section-title compact"><div><h2>2학년 3반 제출 현황</h2><p>미로를 탈출하는 고양이</p></div><button className="text-button" onClick={()=>onNavigate('학생 현황')}>전체 보기 <ArrowRight size={16}/></button></div><ClassTable/></section><section className="panel activity"><div className="section-title compact"><div><h2>최근 활동</h2><p>실시간 학습 소식</p></div></div>{[['김민준','과제를 제출했어요.','10:24'],['박서윤','질문을 남겼어요.','09:51'],['정하은','과제를 수정했어요.','어제'],['윤지호','과제를 제출했어요.','어제']].map((a,i)=><div className="activity-row" key={i}><div className="avatar alt">{a[0][0]}</div><div><b>{a[0]}</b><span>{a[1]}</span></div><time>{a[2]}</time></div>)}</section></div>{modal&&<TaskModal classes={classes} onClose={()=>setModal(false)}/>}</div>
 }
 
-function TeacherDashboard({classes,tasks,onNavigate,onAdd,modal,onClose}) {
+function TeacherDashboard({classes,tasks,pendingStudents,onNavigate,onAdd,modal,onClose}) {
   const [selectedClass,setSelectedClass]=useState(classes[0]||'')
+  const [approving,setApproving]=useState('')
   useEffect(()=>{if(!classes.includes(selectedClass))setSelectedClass(classes[0]||'')},[classes,selectedClass])
   const classTasks=tasks.filter(t=>t.classNames?.includes(selectedClass))
-  return <div className="page-wrap"><PageTitle eyebrow="수업 현황" title="수업 대시보드" desc={`${selectedClass || '담당 학급'}의 학습 현황을 확인하세요.`} action={<button className="primary" onClick={onAdd}><FilePlus2 size={18}/> 과제 만들기</button>}/><div className="dashboard-class-filter"><label>담당 학급<select value={selectedClass} onChange={e=>setSelectedClass(e.target.value)}>{classes.map(c=><option key={c}>{c}</option>)}</select></label><span>관리자가 배정한 학급만 표시됩니다.</span></div><div className="dashboard-stats"><StatCard icon={Users} label="담당 학급" value={String(classes.length)} unit="개" tint="blue"/><StatCard icon={ClipboardCheck} label="등록 과제" value={String(classTasks.length)} unit="건" tint="green"/><StatCard icon={CheckCircle2} label="제출 확인" value="0" unit="건" tint="yellow"/><StatCard icon={MessageCircle} label="학생 질문" value="0" unit="개" tint="purple"/></div><section className="panel dashboard-panel"><div className="section-title compact"><div><h2>{selectedClass} 과제</h2><p>{classTasks.length ? `${classTasks.length}개의 과제가 등록되어 있습니다.` : '등록된 과제가 없습니다.'}</p></div><button className="text-button" onClick={()=>onNavigate('과제 관리')}>과제 관리 <ArrowRight size={16}/></button></div>{classTasks.length?<div className="task-grid">{classTasks.map(t=><TaskCard key={t.id} task={t} onClick={()=>onNavigate('과제 관리')}/>)}</div>:<div className="empty-state">이 학급에 등록된 과제가 없습니다.</div>}</section>{modal&&<TaskModal classes={classes} onClose={onClose}/>}</div>
+  const approve = async uid => {
+    try { setApproving(uid); await approveStudent(uid) }
+    catch (error) { alert(`승인 실패: ${error.message}`) }
+    finally { setApproving('') }
+  }
+  return <div className="page-wrap"><PageTitle eyebrow="수업 현황" title="수업 대시보드" desc={`${selectedClass || '담당 학급'}의 학습 현황을 확인하세요.`} action={<button className="primary" onClick={onAdd}><FilePlus2 size={18}/> 과제 만들기</button>}/><div className="dashboard-class-filter"><label>담당 학급<select value={selectedClass} onChange={e=>setSelectedClass(e.target.value)}>{classes.map(c=><option key={c}>{c}</option>)}</select></label><span>관리자가 배정한 학급만 표시됩니다.</span></div><div className="dashboard-stats"><StatCard icon={Users} label="담당 학급" value={String(classes.length)} unit="개" tint="blue"/><StatCard icon={ClipboardCheck} label="등록 과제" value={String(classTasks.length)} unit="건" tint="green"/><StatCard icon={CheckCircle2} label="제출 확인" value="0" unit="건" tint="yellow"/><StatCard icon={MessageCircle} label="학생 질문" value="0" unit="개" tint="purple"/></div>{pendingStudents?.length>0&&<section className="panel teacher-list"><div className="section-title compact"><div><h2>학생 가입 승인</h2><p>{pendingStudents.length}명이 승인을 기다리고 있어요.</p></div></div>{pendingStudents.map(s=><div className="teacher-row" key={s.id}><div className="avatar alt">{s.name?.[0]||'학'}</div><div><b>{s.name||'이름 없음'}</b><span>{s.className||'학급 미지정'} · {s.studentNumber||'학번 없음'}</span></div><button className="primary small" disabled={approving===s.id} onClick={()=>approve(s.id)}>{approving===s.id?'승인 중...':'승인'}</button></div>)}</section>}<section className="panel dashboard-panel"><div className="section-title compact"><div><h2>{selectedClass} 과제</h2><p>{classTasks.length ? `${classTasks.length}개의 과제가 등록되어 있습니다.` : '등록된 과제가 없습니다.'}</p></div><button className="text-button" onClick={()=>onNavigate('과제 관리')}>과제 관리 <ArrowRight size={16}/></button></div>{classTasks.length?<div className="task-grid">{classTasks.map(t=><TaskCard key={t.id} task={t} onClick={()=>onNavigate('과제 관리')}/>)}</div>:<div className="empty-state">이 학급에 등록된 과제가 없습니다.</div>}</section>{modal&&<TaskModal classes={classes} onClose={onClose}/>}</div>
 }
 
 function PageTitle({eyebrow,title,desc,action}) { return <div className="page-heading row"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{desc}</p></div>{action}</div> }
@@ -324,15 +345,18 @@ function TaskModal({onClose,task,classes:availableClasses}) {
 }
 function Required(){return <span className="required">필수</span>}
 
-function AdminPage({ active, classes, onClassAdded, teachers }) {
+function AdminPage({ active, classes, onClassAdded, teachers, pendingTeachers }) {
   const [admin,setAdmin]=useState('박지훈'); const [toast,setToast]=useState(false)
-  const [showAdd,setShowAdd]=useState(false); const [newTeacher,setNewTeacher]=useState(''); const [teacherEmail,setTeacherEmail]=useState(''); const [teacherClasses,setTeacherClasses]=useState([]); const [teacherSaving,setTeacherSaving]=useState(false); const [newClass,setNewClass]=useState(''); const [classSaving,setClassSaving]=useState(false)
+  const [showAdd,setShowAdd]=useState(false); const [approvingUid,setApprovingUid]=useState(''); const [newTeacher,setNewTeacher]=useState(''); const [teacherEmail,setTeacherEmail]=useState(''); const [teacherClasses,setTeacherClasses]=useState([]); const [teacherSaving,setTeacherSaving]=useState(false); const [newClass,setNewClass]=useState(''); const [classSaving,setClassSaving]=useState(false)
+  const closeAddModal = () => { setShowAdd(false); setApprovingUid(''); setNewTeacher(''); setTeacherEmail(''); setTeacherClasses([]) }
+  const openApproval = t => { const existingInvite = teachers.find(inv => inv.email === t.email); setApprovingUid(t.id); setNewTeacher(t.name||''); setTeacherEmail(t.email||''); setTeacherClasses(existingInvite?.classNames||[]); setShowAdd(true) }
   return <div className="page-wrap"><PageTitle eyebrow="학교 관리" title={active==='권한 설정'?'권한 설정':active==='교사 관리'?'교사 관리':active==='학급 관리'?'학급 관리':'관리자 대시보드'} desc={active==='학급 관리'?'과제에 사용할 학급을 추가하고 확인하세요.':'교사 계정과 관리자 권한을 안전하게 관리하세요.'}/>
     {active==='학급 관리'?<section className="panel teacher-list"><div className="section-title compact"><div><h2>학급 관리</h2><p>등록된 학급 {classes.length}개 · 학년과 반을 자유롭게 추가할 수 있어요.</p></div></div><form className="class-add-form" onSubmit={async e=>{e.preventDefault();const name=newClass.trim();if(classes.includes(name)){alert('이미 등록된 학급입니다.');return}try{setClassSaving(true);if(firebaseReady)await saveClass(name);onClassAdded(name);setNewClass('');setToast(true);setTimeout(()=>setToast(false),2500)}catch(error){alert(`학급 등록 실패: ${error.message}`)}finally{setClassSaving(false)}}}><label>새 학급 이름 <Required/><div><input required value={newClass} onChange={e=>setNewClass(e.target.value)} placeholder="예: 1학년 5반, 4학년 2반"/><button className="primary" disabled={classSaving}>{classSaving?'추가 중...':'학급 추가'}</button></div></label><small>{firebaseReady?'서버에 안전하게 저장됩니다.':'현재 기기의 브라우저에 저장됩니다.'}</small></form><div className="class-list">{classes.map((name,i)=><div key={name}><span>{String(i+1).padStart(2,'0')}</span><b>{name}</b><em>사용 중</em></div>)}</div></section>:<>
     <div className="admin-highlight"><div className="crown"><Crown/></div><div><span>현재 관리자</span><h2>{admin}</h2><p>관리자는 한 명만 지정할 수 있습니다.</p></div><div className="admin-id">admin · 최근 접속 오늘 08:32</div></div>
+    {pendingTeachers?.length>0&&<section className="panel teacher-list"><div className="section-title compact"><div><h2>교사 가입 승인</h2><p>{pendingTeachers.length}명이 승인을 기다리고 있어요.</p></div></div>{pendingTeachers.map(t=><div className="teacher-row" key={t.id}><div className="avatar teacher">{t.name?.[0]||'교'}</div><div><b>{t.name||'이름 없음'}</b><span>{t.email}</span></div><button className="primary small" onClick={()=>openApproval(t)}>승인하기</button></div>)}</section>}
     <div className="admin-grid"><section className="panel teacher-list"><div className="section-title compact"><div><h2>교사 권한 관리</h2><p>서버에 등록된 교사 {teachers.length}명</p></div><button className="primary small" onClick={()=>setShowAdd(true)}><Plus size={16}/> 교사 추가</button></div>{teachers.length?teachers.map(t=><div className="teacher-row" key={t.email}><div className="avatar teacher">{t.name?.[0]||'교'}</div><div><b>{t.name}</b><span>{t.email} · {t.classNames?.join(', ')||'담당 학급 없음'}</span></div><span className="status ok">교사</span><button aria-label="교사 삭제" className="icon-btn" onClick={async()=>{if(confirm(`${t.name} 교사의 권한을 삭제할까요?`))try{await removeTeacher(t.email)}catch(error){alert(`삭제 실패: ${error.message}`)}}}><X size={18}/></button></div>):<div className="empty-state">등록된 교사가 없습니다. 교사 이름과 이메일, 담당 학급을 등록해 주세요.</div>}</section>
       <section className="panel transfer"><div className="transfer-icon"><ShieldCheck/></div><h2>관리자 권한 넘기기</h2><p>선택한 교사가 새 관리자가 되며,<br/>현재 관리자는 교사로 변경됩니다.</p><label>새 관리자 선택<select id="newAdmin"><option>이서연</option><option>김도현</option><option>오수민</option></select></label><button className="outline-danger" onClick={()=>{const v=document.getElementById('newAdmin').value;setAdmin(v);setToast(true);setTimeout(()=>setToast(false),2500)}}>관리자 권한 넘기기</button><div className="warning"><ShieldCheck size={16}/> 이 작업은 즉시 적용됩니다.</div></section>
-    </div></>}{toast&&<div className="toast"><CheckCircle2/> {active==='학급 관리'?'학급이 추가되었습니다.':'교사 정보가 서버에 저장되었습니다.'}</div>}{showAdd&&<div className="modal-backdrop"><div className="modal"><div className="modal-head"><div><p className="eyebrow">교사 권한</p><h2>교사 추가</h2></div><button onClick={()=>setShowAdd(false)}><X/></button></div><form onSubmit={async e=>{e.preventDefault();if(!teacherClasses.length){alert('담당 학급을 한 곳 이상 선택해 주세요.');return}try{setTeacherSaving(true);await saveTeacher({name:newTeacher,email:teacherEmail,classNames:teacherClasses});setShowAdd(false);setNewTeacher('');setTeacherEmail('');setTeacherClasses([]);setToast(true);setTimeout(()=>setToast(false),2500)}catch(error){alert(`교사 등록 실패: ${error.message}`)}finally{setTeacherSaving(false)}}}><div className="form-row"><label>교사 이름 <Required/><input required value={newTeacher} onChange={e=>setNewTeacher(e.target.value)} placeholder="이름을 입력하세요"/></label><label>Google 이메일 <Required/><input required type="email" value={teacherEmail} onChange={e=>setTeacherEmail(e.target.value)} placeholder="teacher@gmail.com"/></label></div><fieldset className="class-picker"><legend>담당 학급 <Required/></legend><div>{classes.map(c=><label key={c} className={teacherClasses.includes(c)?'checked':''}><input type="checkbox" checked={teacherClasses.includes(c)} onChange={()=>setTeacherClasses(x=>x.includes(c)?x.filter(v=>v!==c):[...x,c])}/>{c}</label>)}</div></fieldset><p className="permission-note">선택한 학급의 과제와 학생 제출 현황을 관리할 수 있습니다.</p><div className="modal-actions"><button type="button" onClick={()=>setShowAdd(false)}>취소</button><button className="primary" disabled={teacherSaving}>{teacherSaving?'서버에 저장 중...':'교사 추가'}</button></div></form></div></div>}</div>
+    </div></>}{toast&&<div className="toast"><CheckCircle2/> {active==='학급 관리'?'학급이 추가되었습니다.':'교사 정보가 서버에 저장되었습니다.'}</div>}{showAdd&&<div className="modal-backdrop"><div className="modal"><div className="modal-head"><div><p className="eyebrow">교사 권한</p><h2>{approvingUid?'교사 가입 승인':'교사 추가'}</h2></div><button onClick={closeAddModal}><X/></button></div><form onSubmit={async e=>{e.preventDefault();if(!teacherClasses.length){alert('담당 학급을 한 곳 이상 선택해 주세요.');return}try{setTeacherSaving(true);if(approvingUid)await approveTeacher({uid:approvingUid,name:newTeacher,email:teacherEmail,classNames:teacherClasses});else await saveTeacher({name:newTeacher,email:teacherEmail,classNames:teacherClasses});closeAddModal();setToast(true);setTimeout(()=>setToast(false),2500)}catch(error){alert(`교사 등록 실패: ${error.message}`)}finally{setTeacherSaving(false)}}}><div className="form-row"><label>교사 이름 <Required/><input required value={newTeacher} onChange={e=>setNewTeacher(e.target.value)} placeholder="이름을 입력하세요"/></label><label>{approvingUid?'이메일':'Google 이메일'} <Required/><input required type="email" readOnly={!!approvingUid} value={teacherEmail} onChange={e=>setTeacherEmail(e.target.value)} placeholder="teacher@gmail.com"/></label></div><fieldset className="class-picker"><legend>담당 학급 <Required/></legend><div>{classes.map(c=><label key={c} className={teacherClasses.includes(c)?'checked':''}><input type="checkbox" checked={teacherClasses.includes(c)} onChange={()=>setTeacherClasses(x=>x.includes(c)?x.filter(v=>v!==c):[...x,c])}/>{c}</label>)}</div></fieldset><p className="permission-note">선택한 학급의 과제와 학생 제출 현황을 관리할 수 있습니다.</p><div className="modal-actions"><button type="button" onClick={closeAddModal}>취소</button><button className="primary" disabled={teacherSaving}>{teacherSaving?'서버에 저장 중...':approvingUid?'승인 완료':'교사 추가'}</button></div></form></div></div>}</div>
 }
 
 export default App

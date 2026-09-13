@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { createUserWithEmailAndPassword, deleteUser, getAuth, GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth'
+import { createUserWithEmailAndPassword, getAuth, GoogleAuthProvider, sendPasswordResetEmail, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth'
 import {
   addDoc, Bytes, collection, deleteDoc, doc, getDoc, getFirestore, onSnapshot, orderBy, query,
   serverTimestamp, setDoc, updateDoc, where, writeBatch,
@@ -49,27 +49,15 @@ export async function ensureSession(role, name, credentials = {}) {
     ? await createUserWithEmailAndPassword(auth, credentials.email.trim().toLowerCase(), credentials.password)
     : auth.currentUser ? { user: auth.currentUser } : await signInWithPopup(auth, new GoogleAuthProvider())
   const email = credential.user.email?.toLowerCase()
-  const invite = email ? await getDoc(doc(db, 'teacherInvites', email)) : null
-  const approvedTeacher = invite?.exists() ? invite.data() : null
-  if (role === 'teacher' && !approvedTeacher) {
-    if (credentials.email) await deleteUser(credential.user)
-    throw new Error('관리자가 등록한 교사 명단에서 이 이메일을 찾을 수 없습니다.')
-  }
-  if (role === 'admin' && !['admin@test0913.app','su1413911@gmail.com'].includes(email)) throw new Error('등록된 관리자 계정이 아닙니다.')
   await setDoc(doc(db, 'users', credential.user.uid), {
     name: credential.user.displayName || name,
     email,
-    ...(approvedTeacher ? { role: 'teacher', classNames: approvedTeacher.classNames || [] } : {}),
+    accountType: role,
+    approved: false,
     lastSelectedScreen: role,
     updatedAt: serverTimestamp(),
   }, { merge: true })
-  return {
-    uid: credential.user.uid,
-    name: credential.user.displayName || name,
-    email,
-    role: ['admin@test0913.app','su1413911@gmail.com'].includes(email) ? 'admin' : approvedTeacher ? 'teacher' : 'student',
-    classNames: approvedTeacher?.classNames || [],
-  }
+  return { uid: credential.user.uid, name: credential.user.displayName || name, email, role, accountType: role, approved: false }
 }
 
 export async function loginRegisteredUser(screenRole, credentials = {}) {
@@ -88,15 +76,22 @@ export async function loginRegisteredUser(screenRole, credentials = {}) {
   }
   if (!profileSnapshot.exists()) throw new Error('회원가입되지 않은 계정입니다. 먼저 회원가입을 진행해 주세요.')
   const profile = profileSnapshot.data()
-  const actualRole = ['admin@test0913.app','su1413911@gmail.com'].includes(email) ? 'admin' : profile.role === 'teacher' ? 'teacher' : profile.accountType === 'student' ? 'student' : null
+  const actualRole = ['admin@test0913.app','su1413911@gmail.com'].includes(email) ? 'admin' : (profile.role === 'teacher' || profile.accountType === 'teacher') ? 'teacher' : profile.accountType === 'student' ? 'student' : null
   if (actualRole !== screenRole) throw new Error(`이 계정은 ${screenRole === 'teacher' ? '교사' : screenRole === 'student' ? '학생' : '관리자'}로 등록되어 있지 않습니다.`)
+  if (actualRole === 'student' && profile.approved === false) throw new Error('담당 선생님의 승인을 기다리고 있어요.')
   let assignedClasses = profile.classNames || []
   if (actualRole === 'teacher') {
+    if (profile.approved === false) throw new Error('관리자 승인을 기다리고 있어요.')
     const invite = await getDoc(doc(db, 'teacherInvites', email))
     if (!invite.exists()) throw new Error('교사 권한이 회수되었거나 등록되지 않았습니다.')
     assignedClasses = invite.data().classNames || []
   }
   return { uid: credential.user.uid, name: profile.name || credential.user.displayName, email, role: actualRole, className: profile.className || '', classNames: assignedClasses }
+}
+
+export async function resetPassword(email) {
+  if (!firebaseReady) throw new Error('Firebase가 연결되지 않았습니다.')
+  await sendPasswordResetEmail(auth, email.trim().toLowerCase())
 }
 
 export async function logoutSession() {
@@ -120,6 +115,30 @@ export async function saveTeacher({ name, email, classNames }) {
 
 export async function removeTeacher(email) {
   await deleteDoc(doc(db, 'teacherInvites', email.trim().toLowerCase()))
+}
+
+export function listenPendingTeachers(callback, onError) {
+  if (!firebaseReady) return () => {}
+  return onSnapshot(query(collection(db, 'users'), where('accountType', '==', 'teacher'), where('approved', '==', false)), snapshot => {
+    callback(snapshot.docs.map(item => ({ id: item.id, ...item.data() })))
+  }, onError)
+}
+
+export async function approveTeacher({ uid, name, email, classNames }) {
+  await saveTeacher({ name, email, classNames })
+  await updateDoc(doc(db, 'users', uid), { role: 'teacher', classNames, approved: true, updatedAt: serverTimestamp() })
+}
+
+export function listenPendingStudents(classNames, callback, onError) {
+  if (!firebaseReady) return () => {}
+  return onSnapshot(query(collection(db, 'users'), where('accountType', '==', 'student'), where('approved', '==', false)), snapshot => {
+    const items = snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
+    callback(classNames?.length ? items.filter(student => classNames.includes(student.className)) : items)
+  }, onError)
+}
+
+export async function approveStudent(uid) {
+  await updateDoc(doc(db, 'users', uid), { approved: true, updatedAt: serverTimestamp() })
 }
 
 export async function saveUserProfile(userId, profile) {
