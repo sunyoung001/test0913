@@ -57,8 +57,8 @@ function App() {
   useEffect(() => firebaseUser?.role === 'admin' ? listenTeachers(setTeachers, error => setServerError(error.message)) : () => {}, [firebaseUser])
   useEffect(() => localStorage.setItem('thinkingcoding-classes', JSON.stringify(classes)), [classes])
 
-  const login = async role => {
-    try { const user = await loginRegisteredUser(role); setFirebaseUser(user); setUserType(role); setServerError('') }
+  const login = async (role, credentials) => {
+    try { const user = await loginRegisteredUser(role, credentials); setFirebaseUser(user); setUserType(role); setServerError('') }
     catch (error) { setServerError(error.message); throw error }
   }
 
@@ -125,13 +125,15 @@ function AuthPage({ onLogin, onRegister, classes }) {
   const [terms, setTerms] = useState(false)
   const [loading, setLoading] = useState(false)
   const [authError, setAuthError] = useState('')
+  const [adminId, setAdminId] = useState('')
+  const [adminPassword, setAdminPassword] = useState('')
   const submit = async e => {
     e.preventDefault()
     if (mode === 'signup' && !terms) return alert('개인정보 수집 및 이용에 동의해 주세요.')
     try {
       setLoading(true)
       setAuthError('')
-      if (mode === 'login') await onLogin(role)
+      if (mode === 'login') await onLogin(role, role === 'admin' ? { id: adminId, password: adminPassword } : undefined)
       else await onRegister({ accountType: role, name, className: role === 'student' ? className : '', studentNumber: role === 'student' ? studentNumber : '' })
     } catch (error) {
       setAuthError(error.code === 'auth/popup-closed-by-user' ? 'Google 계정 선택이 취소되었습니다.' : `인증에 실패했습니다: ${error.message}`)
@@ -151,14 +153,15 @@ function AuthPage({ onLogin, onRegister, classes }) {
         <div className="role-tabs">
           {(mode==='login'?[['student','학생'],['teacher','교사'],['admin','관리자']]:[['student','학생'],['teacher','교사']]).map(([key,label]) => <button type="button" key={key} className={role===key?'selected':''} onClick={()=>setRole(key)}>{label}</button>)}
         </div>
+        {mode==='login'&&role==='admin'&&<><label>관리자 아이디 <Required/><input required autoComplete="username" value={adminId} onChange={e=>setAdminId(e.target.value)} placeholder="아이디를 입력하세요"/></label><label>비밀번호 <Required/><input required type="password" autoComplete="current-password" value={adminPassword} onChange={e=>setAdminPassword(e.target.value)} placeholder="비밀번호를 입력하세요"/></label></>}
         {mode==='signup'&&<>
           <label>이름 <Required/><input required value={name} onChange={e=>setName(e.target.value)} placeholder="이름을 입력하세요"/></label>
           {role==='student'?<div className="form-row"><label>학급 <Required/><select required value={className} onChange={e=>setClassName(e.target.value)}>{classes.map(c=><option key={c}>{c}</option>)}</select></label><label>학번 <Required/><input required value={studentNumber} onChange={e=>setStudentNumber(e.target.value)} placeholder="예: 2301"/></label></div>:<div className="teacher-signup-note"><ShieldCheck size={19}/><p>관리자가 등록한 Google 이메일과 일치해야 교사 권한이 활성화됩니다.</p></div>}
           <label className="terms-check"><input type="checkbox" checked={terms} onChange={e=>setTerms(e.target.checked)}/><span>회원가입을 위한 개인정보 수집 및 이용에 동의합니다.</span></label>
         </>}
         {authError&&<div className="auth-error">{authError}</div>}
-        <button className="primary big" disabled={loading} type="submit">{loading?'Google 계정 연결 중...':mode==='login'?'Google 계정으로 로그인':'Google 계정으로 가입'}{!loading&&<ArrowRight size={18}/>}</button>
-        <p className="demo-note">{mode==='signup'&&role==='teacher'?'교사 권한은 관리자 승인 후 사용할 수 있습니다.':'Google 인증 창에서 사용할 계정을 선택해 주세요.'}</p>
+        <button className="primary big" disabled={loading} type="submit">{loading?'로그인 확인 중...':mode==='login'&&role==='admin'?'관리자 로그인':mode==='login'?'Google 계정으로 로그인':'Google 계정으로 가입'}{!loading&&<ArrowRight size={18}/>}</button>
+        <p className="demo-note">{mode==='login'&&role==='admin'?'관리자 전용 계정으로 로그인합니다.':mode==='signup'&&role==='teacher'?'교사 권한은 관리자 승인 후 사용할 수 있습니다.':'Google 인증 창에서 사용할 계정을 선택해 주세요.'}</p>
       </form>
     </section>
   </div>

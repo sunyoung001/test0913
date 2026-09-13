@@ -2,7 +2,7 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     function signedIn() { return request.auth != null; }
-    function isAdmin() { return signedIn() && request.auth.token.email == 'su1413911@gmail.com'; }
+    function isAdmin() { return signedIn() && request.auth.token.email in ['admin@test0913.app', 'su1413911@gmail.com']; }
     function isTeacher() {
       return isAdmin() || (signedIn() && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'teacher');
     }

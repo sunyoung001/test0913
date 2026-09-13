@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth'
+import { getAuth, GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth'
 import {
   addDoc, collection, deleteDoc, doc, getDoc, getFirestore, onSnapshot, orderBy, query,
   serverTimestamp, setDoc, updateDoc, where,
@@ -40,7 +40,7 @@ export async function ensureSession(role, name) {
   const invite = email ? await getDoc(doc(db, 'teacherInvites', email)) : null
   const approvedTeacher = invite?.exists() ? invite.data() : null
   if (role === 'teacher' && !approvedTeacher) throw new Error('관리자가 등록한 교사 명단에서 이 Google 계정을 찾을 수 없습니다.')
-  if (role === 'admin' && email !== 'su1413911@gmail.com') throw new Error('등록된 관리자 계정이 아닙니다.')
+  if (role === 'admin' && !['admin@test0913.app','su1413911@gmail.com'].includes(email)) throw new Error('등록된 관리자 계정이 아닙니다.')
   await setDoc(doc(db, 'users', credential.user.uid), {
     name: credential.user.displayName || name,
     email,
@@ -52,23 +52,26 @@ export async function ensureSession(role, name) {
     uid: credential.user.uid,
     name: credential.user.displayName || name,
     email,
-    role: email === 'su1413911@gmail.com' ? 'admin' : approvedTeacher ? 'teacher' : 'student',
+    role: ['admin@test0913.app','su1413911@gmail.com'].includes(email) ? 'admin' : approvedTeacher ? 'teacher' : 'student',
     classNames: approvedTeacher?.classNames || [],
   }
 }
 
-export async function loginRegisteredUser(screenRole) {
+export async function loginRegisteredUser(screenRole, credentials = {}) {
   if (!firebaseReady) throw new Error('Firebase가 연결되지 않았습니다.')
-  const credential = auth.currentUser ? { user: auth.currentUser } : await signInWithPopup(auth, new GoogleAuthProvider())
+  if (screenRole === 'admin' && credentials.id !== 'admin') throw new Error('관리자 아이디 또는 비밀번호가 올바르지 않습니다.')
+  const credential = screenRole === 'admin'
+    ? await signInWithEmailAndPassword(auth, 'admin@test0913.app', credentials.password || '')
+    : auth.currentUser ? { user: auth.currentUser } : await signInWithPopup(auth, new GoogleAuthProvider())
   const email = credential.user.email?.toLowerCase()
   const profileSnapshot = await getDoc(doc(db, 'users', credential.user.uid))
-  if (email === 'su1413911@gmail.com' && screenRole === 'admin') {
+  if (['admin@test0913.app','su1413911@gmail.com'].includes(email) && screenRole === 'admin') {
     await setDoc(doc(db, 'users', credential.user.uid), { name: credential.user.displayName || '관리자', email, updatedAt: serverTimestamp() }, { merge: true })
     return { uid: credential.user.uid, name: credential.user.displayName || '관리자', email, role: 'admin', classNames: [] }
   }
   if (!profileSnapshot.exists()) throw new Error('회원가입되지 않은 계정입니다. 먼저 회원가입을 진행해 주세요.')
   const profile = profileSnapshot.data()
-  const actualRole = email === 'su1413911@gmail.com' ? 'admin' : profile.role === 'teacher' ? 'teacher' : profile.accountType === 'student' ? 'student' : null
+  const actualRole = ['admin@test0913.app','su1413911@gmail.com'].includes(email) ? 'admin' : profile.role === 'teacher' ? 'teacher' : profile.accountType === 'student' ? 'student' : null
   if (actualRole !== screenRole) throw new Error(`이 계정은 ${screenRole === 'teacher' ? '교사' : screenRole === 'student' ? '학생' : '관리자'}로 등록되어 있지 않습니다.`)
   let assignedClasses = profile.classNames || []
   if (actualRole === 'teacher') {
