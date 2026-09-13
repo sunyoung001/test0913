@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import JSZip from 'jszip'
 import {
   ArrowLeft, ArrowRight, BarChart3, BookOpen, Check, CheckCircle2,
   ChevronDown, CircleUserRound, ClipboardCheck, Clock3, Code2, Crown,
@@ -249,6 +250,7 @@ function TaskWorkspace({ task, student, onBack, onUpdate }) {
   const [fileError, setFileError] = useState('')
   const [entryDragging, setEntryDragging] = useState(false)
   const [result, setResult] = useState(null); const [uploading,setUploading]=useState(false)
+  const [feedback, setFeedback] = useState('')
   const chooseQuestionImage = file => {
     if(!file) return
     if(!['image/jpeg','image/png','image/webp'].includes(file.type)){setImageError('JPG, PNG, WEBP 이미지만 첨부할 수 있어요.');return}
@@ -285,15 +287,37 @@ function TaskWorkspace({ task, student, onBack, onUpdate }) {
   const chooseFile = (file) => {
     if (!file) return
     if (!file.name.toLowerCase().endsWith('.ent')) { setEntryFile(null); setFileError('엔트리 프로젝트 파일(.ent)만 제출할 수 있어요.'); return }
-    setEntryFile(file); setFileError(''); setResult(null)
+    setEntryFile(file); setFileError(''); setResult(null); setFeedback('')
   }
-  const submit = async () => { if(!entryFile){setFileError('제출할 엔트리 파일을 선택해 주세요.');return}if(!firebaseReady||!student){setFileError('Firebase 연결 후 제출할 수 있습니다. .env 설정을 확인해 주세요.');return}try{setUploading(true);await submitEntry({taskId:task.id,file:entryFile,explanation:'',student});setResult('correct');onUpdate({status:'done',attempts:(task.attempts||0)+1})}catch(error){setFileError(`제출 실패: ${error.message}`)}finally{setUploading(false)} }
+  const submit = async () => {
+    if(!entryFile){setFileError('제출할 엔트리 파일을 선택해 주세요.');return}
+    if(!firebaseReady||!student){setFileError('Firebase 연결 후 제출할 수 있습니다. .env 설정을 확인해 주세요.');return}
+    if(!task.criteria){setFileError('교사가 정답 기준을 설정하지 않은 과제라 자동 채점을 할 수 없어요. 교사에게 문의해 주세요.');return}
+    try{
+      setUploading(true); setFileError('')
+      let projectJson
+      try {
+        const zip = await JSZip.loadAsync(entryFile)
+        const entry = Object.values(zip.files).find(f => !f.dir && /project\.json$/i.test(f.name))
+        if (!entry) throw new Error('project.json not found')
+        projectJson = await entry.async('text')
+      } catch { throw new Error('올바른 엔트리(.ent) 파일이 아니거나 손상되었어요. 다시 확인해 주세요.') }
+      const response = await fetch('/api/grade', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ title: task.title, description: task.description, criteria: task.criteria, project: projectJson.slice(0, 20000) }) })
+      const data = await response.json().catch(()=>({}))
+      if(!response.ok) throw new Error(data.error || '채점에 실패했습니다.')
+      const correct = !!data.correct
+      await submitEntry({taskId:task.id,file:entryFile,explanation:data.feedback||'',student,resultStatus:correct?'correct':'wrong'})
+      setResult(correct?'correct':'wrong'); setFeedback(data.feedback||'')
+      onUpdate({status:correct?'done':'progress',attempts:(task.attempts||0)+1})
+    }catch(error){ setFileError(`제출 실패: ${error.message}`) }
+    finally{ setUploading(false) }
+  }
   return <div className="workspace-page">
     <div className="workspace-header"><button className="back" onClick={onBack}><ArrowLeft size={19}/> 과제 목록</button><div><span className="subject">{task.subject}</span><h1>{task.title}</h1></div><span className="due"><Clock3 size={15}/>{task.due} 마감</span></div>
     <div className="workspace-grid">
       <section className="problem-panel panel"><div className="panel-heading"><span>과제 안내</span><div className="step-dots"><i className="on"></i><i></i><i></i></div></div><div className="problem-body"><div className="problem-no">과제 설명</div><div className="teacher-description">{task.description?.trim()||'교사가 작성한 과제 설명이 없습니다.'}</div>{task.hint&&<div className="hint-box"><Lightbulb size={20}/><div><b>생각 열기</b><p>{task.hint}</p></div></div>}<div className="submission-heading"><b>과제 파일 제출</b><p>완성한 엔트리 프로젝트 파일을 올려 주세요.</p></div><label className={`file-drop ${fileError?'has-error':''} ${entryDragging?'is-dragging':''}`} onDragEnter={e=>{e.preventDefault();setEntryDragging(true)}} onDragOver={e=>{e.preventDefault();setEntryDragging(true)}} onDragLeave={()=>setEntryDragging(false)} onDrop={e=>{e.preventDefault();setEntryDragging(false);chooseFile(e.dataTransfer.files?.[0])}}><input type="file" accept=".ent,application/octet-stream" onChange={e=>chooseFile(e.target.files?.[0])}/><div className="file-icon">{entryFile?<FileCode2/>:<Upload/>}</div><div><b>{entryDragging?'여기에 놓아 주세요':entryFile?entryFile.name:'엔트리 파일 업로드'}</b><p>{entryDragging?'.ent 파일을 놓으면 선택됩니다.':entryFile?`${(entryFile.size/1024).toFixed(1)} KB · 다른 파일 선택 가능`:'.ent 파일을 선택하거나 여기에 끌어다 놓으세요.'}</p></div></label>{fileError&&<p className="field-error">{fileError}</p>}{result && <div className={`result ${result}`}>
-        {result === 'correct' ? <><CheckCircle2/><div><b>정답이에요!</b><p>반복 구조를 정확하게 사용했어요.</p></div></> : <><XCircle/><div><b>아직 조금 부족해요.</b><p>블록의 순서와 반복 횟수를 다시 확인해 보세요. 수정 후 다시 제출할 수 있어요.</p></div></>}
-      </div>}<button className="primary submit" onClick={submit} disabled={uploading}>{uploading?'파일을 제출하는 중...':result === 'wrong' ? '수정해서 다시 제출' : '과제 제출하기'}{!uploading&&<ArrowRight size={18}/>}</button></div></section>
+        {result === 'correct' ? <><CheckCircle2/><div><b>정답이에요!</b><p>{feedback||'반복 구조를 정확하게 사용했어요.'}</p></div></> : <><XCircle/><div><b>아직 조금 부족해요.</b><p>{feedback||'블록의 순서와 반복 횟수를 다시 확인해 보세요. 수정 후 다시 제출할 수 있어요.'}</p></div></>}
+      </div>}<button className="primary submit" onClick={submit} disabled={uploading}>{uploading?'채점하는 중...':result === 'wrong' ? '수정해서 다시 제출' : '과제 제출하기'}{!uploading&&<ArrowRight size={18}/>}</button></div></section>
       <section className={`chat-panel panel ${imageDragging?'is-image-dragging':''}`} onDragEnter={e=>{if(Array.from(e.dataTransfer?.items||[]).some(item=>item.kind==='file')){e.preventDefault();setImageDragging(true)}}} onDragOver={e=>{if(Array.from(e.dataTransfer?.items||[]).some(item=>item.kind==='file'))e.preventDefault()}} onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setImageDragging(false)}} onDrop={dropQuestionImage}><div className="chat-heading"><div><MessageCircle size={20}/><div><b>질문하기</b><span>프로그래밍 질문을 설명해 드려요</span></div></div><span className="online">{chatLoading?'답변 중':'도움 가능'}</span></div><div className="messages">{messages.map((m,i)=><div key={i} className={`message ${m.type}`}><span>{m.type === 'guide' ? '길잡이' : '나'}</span>{m.image&&<img className="message-image" src={m.image.url} alt={m.image.name}/>} {m.text&&<p>{m.text}</p>}</div>)}{chatLoading&&<div className="message guide loading"><span>길잡이</span><p>질문을 살펴보고 있어요…</p></div>}</div><div className="quick-prompts"><button onClick={()=>setMessage('어디서부터 시작해야 할지 모르겠어요.')}>어디서 시작할까요?</button><button onClick={()=>setMessage('반복 블록은 언제 사용하나요?')}>반복 블록이 궁금해요</button></div>{imageDragging&&<div className="chat-drop-overlay"><ImagePlus/><b>사진을 여기에 놓아 주세요</b></div>}{questionImage&&<div className="image-preview"><img src={questionImage.url} alt="첨부 이미지 미리보기"/><span>{questionImage.name}</span><button onClick={()=>setQuestionImage(null)} aria-label="첨부 이미지 삭제"><X size={15}/></button></div>}{imageError&&<div className="chat-file-error">{imageError}</div>}<div className="chat-input"><label className="image-attach" title="사진 첨부"><input type="file" accept="image/png,image/jpeg,image/webp" disabled={chatLoading} onChange={e=>{chooseQuestionImage(e.target.files?.[0]);e.target.value=''}}/><ImagePlus size={19}/></label><textarea value={message} disabled={chatLoading} onPaste={pasteQuestionImage} onChange={e=>setMessage(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}} placeholder="질문을 입력하거나 사진을 붙여넣으세요."/><button onClick={send} disabled={chatLoading||(!message.trim()&&!questionImage)} aria-label="질문 보내기"><Send size={18}/></button></div></section>
     </div>
   </div>

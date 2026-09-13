@@ -186,13 +186,13 @@ export async function saveTask({ task, title, classNames, deadline, description,
   return taskRef.id
 }
 
-export async function submitEntry({ taskId, file, explanation, student }) {
+export async function submitEntry({ taskId, file, explanation, student, resultStatus }) {
   const submissionRef = doc(collection(db, 'submissions'))
   const savedFile = await saveFileToFirestore(file, 'submission', student.uid)
   await setDoc(submissionRef, {
     taskId: String(taskId), studentId: student.uid, studentName: student.name,
     fileName: file.name, fileUrl: `firestore://${savedFile.id}`, fileId: savedFile.id,
-    explanation, status: 'submitted', submittedAt: serverTimestamp(),
+    explanation, status: resultStatus || 'submitted', submittedAt: serverTimestamp(),
   })
   return submissionRef.id
 }
