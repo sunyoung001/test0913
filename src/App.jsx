@@ -6,7 +6,7 @@ import {
   MoreHorizontal, PencilLine, Plus, Search, Send, ShieldCheck, Sparkles,
   Upload, UserCog, Users, X, XCircle,
 } from 'lucide-react'
-import { ensureSession, firebaseReady, listenClasses, listenTasks, saveClass, saveTask, submitEntry } from './firebase'
+import { ensureSession, firebaseReady, listenClasses, listenTasks, listenTeachers, removeTeacher, saveClass, saveTask, saveTeacher, submitEntry } from './firebase'
 
 const USERS = {
   student: { name: '김민준', role: '학생', className: '2학년 3반' },
@@ -50,14 +50,16 @@ function App() {
     catch { return ['1학년 1반','1학년 2반','2학년 3반','2학년 4반','3학년 1반'] }
   })
   const [serverError, setServerError] = useState('')
+  const [teachers, setTeachers] = useState([])
 
-  useEffect(() => listenTasks(items => { if (items.length) setTasks(items) }, error => setServerError(error.message)), [])
-  useEffect(() => listenClasses(items => { if (items.length) setClasses(items.map(item => item.name)) }, error => setServerError(error.message)), [])
+  useEffect(() => firebaseUser ? listenTasks(items => { if (items.length) setTasks(items) }, error => setServerError(error.message)) : () => {}, [firebaseUser])
+  useEffect(() => firebaseUser ? listenClasses(items => { if (items.length) setClasses(items.map(item => item.name)) }, error => setServerError(error.message)) : () => {}, [firebaseUser])
+  useEffect(() => firebaseUser?.role === 'admin' ? listenTeachers(setTeachers, error => setServerError(error.message)) : () => {}, [firebaseUser])
   useEffect(() => localStorage.setItem('thinkingcoding-classes', JSON.stringify(classes)), [classes])
 
   const login = async role => {
     setUserType(role)
-    try { const user = await ensureSession(role, USERS[role].name); setFirebaseUser(user ? { uid:user.uid, name:USERS[role].name } : null) }
+    try { const user = await ensureSession(role, USERS[role].name); setFirebaseUser(user) }
     catch (error) { setServerError(error.message) }
   }
 
@@ -72,7 +74,7 @@ function App() {
 
   const page = userType === 'student'
     ? (selectedTask ? <TaskWorkspace task={selectedTask} student={firebaseUser} onBack={() => setSelectedTask(null)} onUpdate={(patch) => setTasks(t => t.map(x => x.id === selectedTask.id ? {...x, ...patch} : x))} /> : <StudentHome tasks={tasks} onSelect={setSelectedTask} active={active} onNavigate={setActive} />)
-    : userType === 'teacher' ? <TeacherPage active={active} tasks={tasks} classes={classes} onNavigate={setActive} /> : <AdminPage active={active} classes={classes} onClassAdded={name=>setClasses(x=>[...new Set([...x,name])].sort())} />
+    : userType === 'teacher' ? <TeacherPage active={active} tasks={tasks} classes={firebaseUser?.role==='admin'||!firebaseUser?.classNames?.length?classes:firebaseUser.classNames} onNavigate={setActive} /> : <AdminPage active={active} teachers={teachers} classes={classes} onClassAdded={name=>setClasses(x=>[...new Set([...x,name])].sort())} />
 
   return (
     <div className="app-shell">
@@ -205,15 +207,15 @@ function TaskModal({onClose,task,classes:availableClasses}) {
 }
 function Required(){return <span className="required">필수</span>}
 
-function AdminPage({ active, classes, onClassAdded }) {
+function AdminPage({ active, classes, onClassAdded, teachers }) {
   const [admin,setAdmin]=useState('박지훈'); const [toast,setToast]=useState(false)
-  const [teachers,setTeachers]=useState(['이서연','김도현','오수민']); const [showAdd,setShowAdd]=useState(false); const [newTeacher,setNewTeacher]=useState(''); const [newClass,setNewClass]=useState(''); const [classSaving,setClassSaving]=useState(false)
+  const [showAdd,setShowAdd]=useState(false); const [newTeacher,setNewTeacher]=useState(''); const [teacherEmail,setTeacherEmail]=useState(''); const [teacherClasses,setTeacherClasses]=useState([]); const [teacherSaving,setTeacherSaving]=useState(false); const [newClass,setNewClass]=useState(''); const [classSaving,setClassSaving]=useState(false)
   return <div className="page-wrap"><PageTitle eyebrow="학교 관리" title={active==='권한 설정'?'권한 설정':active==='교사 관리'?'교사 관리':active==='학급 관리'?'학급 관리':'관리자 대시보드'} desc={active==='학급 관리'?'과제에 사용할 학급을 추가하고 확인하세요.':'교사 계정과 관리자 권한을 안전하게 관리하세요.'}/>
     {active==='학급 관리'?<section className="panel teacher-list"><div className="section-title compact"><div><h2>학급 관리</h2><p>등록된 학급 {classes.length}개 · 학년과 반을 자유롭게 추가할 수 있어요.</p></div></div><form className="class-add-form" onSubmit={async e=>{e.preventDefault();const name=newClass.trim();if(classes.includes(name)){alert('이미 등록된 학급입니다.');return}try{setClassSaving(true);if(firebaseReady)await saveClass(name);onClassAdded(name);setNewClass('');setToast(true);setTimeout(()=>setToast(false),2500)}catch(error){alert(`학급 등록 실패: ${error.message}`)}finally{setClassSaving(false)}}}><label>새 학급 이름 <Required/><div><input required value={newClass} onChange={e=>setNewClass(e.target.value)} placeholder="예: 1학년 5반, 4학년 2반"/><button className="primary" disabled={classSaving}>{classSaving?'추가 중...':'학급 추가'}</button></div></label><small>{firebaseReady?'서버에 안전하게 저장됩니다.':'현재 기기의 브라우저에 저장됩니다.'}</small></form><div className="class-list">{classes.map((name,i)=><div key={name}><span>{String(i+1).padStart(2,'0')}</span><b>{name}</b><em>사용 중</em></div>)}</div></section>:<>
     <div className="admin-highlight"><div className="crown"><Crown/></div><div><span>현재 관리자</span><h2>{admin}</h2><p>관리자는 한 명만 지정할 수 있습니다.</p></div><div className="admin-id">admin · 최근 접속 오늘 08:32</div></div>
-    <div className="admin-grid"><section className="panel teacher-list"><div className="section-title compact"><div><h2>교사 권한 관리</h2><p>등록된 교사 {teachers.length}명</p></div><button className="primary small" onClick={()=>setShowAdd(true)}><Plus size={16}/> 교사 추가</button></div>{teachers.map((t,i)=><div className="teacher-row" key={t}><div className="avatar teacher">{t[0]}</div><div><b>{t}</b><span>{i===0?'정보 · 2학년 3반':i===1?'수학 · 1학년 2반':'과학 · 3학년 1반'}</span></div><span className="status ok">교사</span><button aria-label="교사 삭제" className="icon-btn" onClick={()=>{if(confirm(`${t} 교사를 목록에서 삭제할까요?`))setTeachers(x=>x.filter(v=>v!==t))}}><X size={18}/></button></div>)}</section>
+    <div className="admin-grid"><section className="panel teacher-list"><div className="section-title compact"><div><h2>교사 권한 관리</h2><p>서버에 등록된 교사 {teachers.length}명</p></div><button className="primary small" onClick={()=>setShowAdd(true)}><Plus size={16}/> 교사 추가</button></div>{teachers.length?teachers.map(t=><div className="teacher-row" key={t.email}><div className="avatar teacher">{t.name?.[0]||'교'}</div><div><b>{t.name}</b><span>{t.email} · {t.classNames?.join(', ')||'담당 학급 없음'}</span></div><span className="status ok">교사</span><button aria-label="교사 삭제" className="icon-btn" onClick={async()=>{if(confirm(`${t.name} 교사의 권한을 삭제할까요?`))try{await removeTeacher(t.email)}catch(error){alert(`삭제 실패: ${error.message}`)}}}><X size={18}/></button></div>):<div className="empty-state">등록된 교사가 없습니다. 교사 이름과 이메일, 담당 학급을 등록해 주세요.</div>}</section>
       <section className="panel transfer"><div className="transfer-icon"><ShieldCheck/></div><h2>관리자 권한 넘기기</h2><p>선택한 교사가 새 관리자가 되며,<br/>현재 관리자는 교사로 변경됩니다.</p><label>새 관리자 선택<select id="newAdmin"><option>이서연</option><option>김도현</option><option>오수민</option></select></label><button className="outline-danger" onClick={()=>{const v=document.getElementById('newAdmin').value;setAdmin(v);setToast(true);setTimeout(()=>setToast(false),2500)}}>관리자 권한 넘기기</button><div className="warning"><ShieldCheck size={16}/> 이 작업은 즉시 적용됩니다.</div></section>
-    </div></>}{toast&&<div className="toast"><CheckCircle2/> {active==='학급 관리'?'학급이 추가되었습니다.':'관리자 권한이 변경되었습니다.'}</div>}{showAdd&&<div className="modal-backdrop"><div className="modal small-modal"><div className="modal-head"><h2>교사 추가</h2><button onClick={()=>setShowAdd(false)}><X/></button></div><form onSubmit={e=>{e.preventDefault();setTeachers(x=>[...x,newTeacher]);setShowAdd(false);setNewTeacher('')}}><label>교사 이름 <Required/><input required value={newTeacher} onChange={e=>setNewTeacher(e.target.value)} placeholder="이름을 입력하세요"/></label><div className="modal-actions"><button type="button" onClick={()=>setShowAdd(false)}>취소</button><button className="primary">추가</button></div></form></div></div>}</div>
+    </div></>}{toast&&<div className="toast"><CheckCircle2/> {active==='학급 관리'?'학급이 추가되었습니다.':'교사 정보가 서버에 저장되었습니다.'}</div>}{showAdd&&<div className="modal-backdrop"><div className="modal"><div className="modal-head"><div><p className="eyebrow">교사 권한</p><h2>교사 추가</h2></div><button onClick={()=>setShowAdd(false)}><X/></button></div><form onSubmit={async e=>{e.preventDefault();if(!teacherClasses.length){alert('담당 학급을 한 곳 이상 선택해 주세요.');return}try{setTeacherSaving(true);await saveTeacher({name:newTeacher,email:teacherEmail,classNames:teacherClasses});setShowAdd(false);setNewTeacher('');setTeacherEmail('');setTeacherClasses([]);setToast(true);setTimeout(()=>setToast(false),2500)}catch(error){alert(`교사 등록 실패: ${error.message}`)}finally{setTeacherSaving(false)}}}><div className="form-row"><label>교사 이름 <Required/><input required value={newTeacher} onChange={e=>setNewTeacher(e.target.value)} placeholder="이름을 입력하세요"/></label><label>Google 이메일 <Required/><input required type="email" value={teacherEmail} onChange={e=>setTeacherEmail(e.target.value)} placeholder="teacher@gmail.com"/></label></div><fieldset className="class-picker"><legend>담당 학급 <Required/></legend><div>{classes.map(c=><label key={c} className={teacherClasses.includes(c)?'checked':''}><input type="checkbox" checked={teacherClasses.includes(c)} onChange={()=>setTeacherClasses(x=>x.includes(c)?x.filter(v=>v!==c):[...x,c])}/>{c}</label>)}</div></fieldset><p className="permission-note">선택한 학급의 과제와 학생 제출 현황을 관리할 수 있습니다.</p><div className="modal-actions"><button type="button" onClick={()=>setShowAdd(false)}>취소</button><button className="primary" disabled={teacherSaving}>{teacherSaving?'서버에 저장 중...':'교사 추가'}</button></div></form></div></div>}</div>
 }
 
 export default App

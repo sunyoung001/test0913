@@ -5,17 +5,33 @@ service cloud.firestore {
     function userRole() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role; }
     function isAdmin() { return signedIn() && request.auth.token.email == 'su1413911@gmail.com'; }
     function isTeacher() { return isAdmin() || (signedIn() && userRole() == 'teacher'); }
+    function canManageTask(data) {
+      return isAdmin() || (isTeacher()
+        && data.classNames.hasOnly(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.classNames));
+    }
+    function hasTeacherInvite() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/teacherInvites/$(request.auth.token.email))
+        && get(/databases/$(database)/documents/teacherInvites/$(request.auth.token.email)).data.email == request.auth.token.email;
+    }
 
     match /users/{userId} {
       allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
       allow create: if signedIn() && request.auth.uid == userId
-                    && !request.resource.data.keys().hasAny(['role']);
+                    && (!request.resource.data.keys().hasAny(['role'])
+                    || (request.resource.data.role == 'teacher' && hasTeacherInvite()));
       allow update: if isAdmin() || (signedIn() && request.auth.uid == userId
-                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']));
+                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
+                    || (request.resource.data.role == 'teacher' && hasTeacherInvite())));
+    }
+    match /teacherInvites/{email} {
+      allow read: if isAdmin() || (signedIn() && request.auth.token.email == email);
+      allow create, update, delete: if isAdmin();
     }
     match /tasks/{taskId} {
       allow read: if signedIn();
-      allow create, update, delete: if isTeacher();
+      allow create, update: if canManageTask(request.resource.data);
+      allow delete: if canManageTask(resource.data);
     }
     match /classes/{classId} {
       allow read: if signedIn();

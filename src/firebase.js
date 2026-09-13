@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
 import {
-  addDoc, collection, doc, getFirestore, onSnapshot, orderBy, query,
+  addDoc, collection, deleteDoc, doc, getDoc, getFirestore, onSnapshot, orderBy, query,
   serverTimestamp, setDoc, updateDoc,
 } from 'firebase/firestore'
 import { getDownloadURL, getStorage, ref, uploadBytesResumable } from 'firebase/storage'
@@ -36,13 +36,42 @@ function uploadWithTimeout(fileRef, file, metadata = undefined) {
 export async function ensureSession(role, name) {
   if (!firebaseReady) return null
   const credential = auth.currentUser ? { user: auth.currentUser } : await signInWithPopup(auth, new GoogleAuthProvider())
+  const email = credential.user.email?.toLowerCase()
+  const invite = email ? await getDoc(doc(db, 'teacherInvites', email)) : null
+  const approvedTeacher = invite?.exists() ? invite.data() : null
   await setDoc(doc(db, 'users', credential.user.uid), {
     name: credential.user.displayName || name,
-    email: credential.user.email,
+    email,
+    ...(approvedTeacher ? { role: 'teacher', classNames: approvedTeacher.classNames || [] } : {}),
     lastSelectedScreen: role,
     updatedAt: serverTimestamp(),
   }, { merge: true })
-  return credential.user
+  return {
+    uid: credential.user.uid,
+    name: credential.user.displayName || name,
+    email,
+    role: email === 'su1413911@gmail.com' ? 'admin' : approvedTeacher ? 'teacher' : 'student',
+    classNames: approvedTeacher?.classNames || [],
+  }
+}
+
+export function listenTeachers(callback, onError) {
+  if (!firebaseReady) return () => {}
+  return onSnapshot(query(collection(db, 'teacherInvites'), orderBy('name')), snapshot => {
+    callback(snapshot.docs.map(item => ({ id: item.id, ...item.data() })))
+  }, onError)
+}
+
+export async function saveTeacher({ name, email, classNames }) {
+  const normalizedEmail = email.trim().toLowerCase()
+  await setDoc(doc(db, 'teacherInvites', normalizedEmail), {
+    name: name.trim(), email: normalizedEmail, classNames,
+    status: 'invited', updatedAt: serverTimestamp(),
+  }, { merge: true })
+}
+
+export async function removeTeacher(email) {
+  await deleteDoc(doc(db, 'teacherInvites', email.trim().toLowerCase()))
 }
 
 export function listenTasks(callback, onError) {
