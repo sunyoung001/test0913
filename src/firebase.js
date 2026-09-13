@@ -74,6 +74,13 @@ export async function removeTeacher(email) {
   await deleteDoc(doc(db, 'teacherInvites', email.trim().toLowerCase()))
 }
 
+export async function saveUserProfile(userId, profile) {
+  await setDoc(doc(db, 'users', userId), {
+    ...profile,
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+}
+
 export function listenTasks(callback, onError) {
   if (!firebaseReady) return () => {}
   return onSnapshot(query(collection(db, 'tasks'), orderBy('createdAt', 'desc')), snapshot => {

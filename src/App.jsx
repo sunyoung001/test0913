@@ -6,7 +6,7 @@ import {
   MoreHorizontal, PencilLine, Plus, Search, Send, ShieldCheck, Sparkles,
   Upload, UserCog, Users, X, XCircle,
 } from 'lucide-react'
-import { ensureSession, firebaseReady, listenClasses, listenTasks, listenTeachers, removeTeacher, saveClass, saveTask, saveTeacher, submitEntry } from './firebase'
+import { ensureSession, firebaseReady, listenClasses, listenTasks, listenTeachers, removeTeacher, saveClass, saveTask, saveTeacher, saveUserProfile, submitEntry } from './firebase'
 
 const USERS = {
   student: { name: '김민준', role: '학생', className: '2학년 3반' },
@@ -58,14 +58,28 @@ function App() {
   useEffect(() => localStorage.setItem('thinkingcoding-classes', JSON.stringify(classes)), [classes])
 
   const login = async role => {
-    setUserType(role)
-    try { const user = await ensureSession(role, USERS[role].name); setFirebaseUser(user) }
-    catch (error) { setServerError(error.message) }
+    try { const user = await ensureSession(role, USERS[role].name); setFirebaseUser(user); setUserType(role); setServerError('') }
+    catch (error) { setServerError(error.message); throw error }
   }
 
-  if (!userType) return <Login onLogin={login} />
+  const register = async profile => {
+    try {
+      const user = await ensureSession(profile.accountType, profile.name)
+      await saveUserProfile(user.uid, {
+        name: profile.name,
+        accountType: profile.accountType,
+        className: profile.className || '',
+        studentNumber: profile.studentNumber || '',
+      })
+      setFirebaseUser({ ...user, name: profile.name, className: profile.className, studentNumber: profile.studentNumber })
+      setUserType(profile.accountType)
+      setServerError('')
+    } catch (error) { setServerError(error.message); setUserType(null); throw error }
+  }
 
-  const user = USERS[userType]
+  if (!userType) return <AuthPage onLogin={login} onRegister={register} classes={classes} />
+
+  const user = firebaseUser ? { ...USERS[userType], name: firebaseUser.name || USERS[userType].name, className: firebaseUser.className || firebaseUser.classNames?.join(', ') || USERS[userType].className } : USERS[userType]
   const navigation = userType === 'student'
     ? [['홈', LayoutDashboard], ['내 과제', BookOpen], ['질문 기록', MessageCircle]]
     : userType === 'teacher'
@@ -99,6 +113,54 @@ function App() {
 }
 
 function Logo() { return <div className="logo"><Code2 size={20}/></div> }
+
+function AuthPage({ onLogin, onRegister, classes }) {
+  const [mode, setMode] = useState('login')
+  const [role, setRole] = useState('student')
+  const [name, setName] = useState('')
+  const [className, setClassName] = useState(classes[0] || '')
+  const [studentNumber, setStudentNumber] = useState('')
+  const [terms, setTerms] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const submit = async e => {
+    e.preventDefault()
+    if (mode === 'signup' && !terms) return alert('개인정보 수집 및 이용에 동의해 주세요.')
+    try {
+      setLoading(true)
+      setAuthError('')
+      if (mode === 'login') await onLogin(role)
+      else await onRegister({ accountType: role, name, className: role === 'student' ? className : '', studentNumber: role === 'student' ? studentNumber : '' })
+    } catch (error) {
+      setAuthError(error.code === 'auth/popup-closed-by-user' ? 'Google 계정 선택이 취소되었습니다.' : `인증에 실패했습니다: ${error.message}`)
+    } finally { setLoading(false) }
+  }
+  return <div className="login-page">
+    <section className="login-intro">
+      <div className="login-brand"><Logo/><span>생각코딩</span></div>
+      <div className="intro-copy"><p className="eyebrow">생각하고, 질문하고, 해결하는</p><h1>코딩을 배우는<br/>새로운 방식.</h1><p>정답을 외우기보다 해결하는 힘을 키워요.<br/>한 단계씩, 내 생각으로 완성해 보세요.</p></div>
+      <div className="shape shape-a"></div><div className="shape shape-b"></div><div className="dot-grid"></div>
+      <p className="copyright">© 2026 생각코딩</p>
+    </section>
+    <section className="login-panel">
+      <form className="login-card signup-card" onSubmit={submit}>
+        <div className="auth-mode"><button type="button" className={mode==='login'?'active':''} onClick={()=>setMode('login')}>로그인</button><button type="button" className={mode==='signup'?'active':''} onClick={()=>{setMode('signup');if(role==='admin')setRole('student')}}>회원가입</button></div>
+        <div><p className="eyebrow">{mode==='login'?'다시 만나 반가워요!':'처음 만나 반가워요!'}</p><h2>{mode==='login'?'로그인':'회원가입'}</h2><p className="muted">{mode==='login'?'Google 계정으로 안전하게 로그인하세요.':'기본 정보를 입력하고 Google 계정을 연결하세요.'}</p></div>
+        <div className="role-tabs">
+          {(mode==='login'?[['student','학생'],['teacher','교사'],['admin','관리자']]:[['student','학생'],['teacher','교사']]).map(([key,label]) => <button type="button" key={key} className={role===key?'selected':''} onClick={()=>setRole(key)}>{label}</button>)}
+        </div>
+        {mode==='signup'&&<>
+          <label>이름 <Required/><input required value={name} onChange={e=>setName(e.target.value)} placeholder="이름을 입력하세요"/></label>
+          {role==='student'?<div className="form-row"><label>학급 <Required/><select required value={className} onChange={e=>setClassName(e.target.value)}>{classes.map(c=><option key={c}>{c}</option>)}</select></label><label>학번 <Required/><input required value={studentNumber} onChange={e=>setStudentNumber(e.target.value)} placeholder="예: 2301"/></label></div>:<div className="teacher-signup-note"><ShieldCheck size={19}/><p>관리자가 등록한 Google 이메일과 일치해야 교사 권한이 활성화됩니다.</p></div>}
+          <label className="terms-check"><input type="checkbox" checked={terms} onChange={e=>setTerms(e.target.checked)}/><span>회원가입을 위한 개인정보 수집 및 이용에 동의합니다.</span></label>
+        </>}
+        {authError&&<div className="auth-error">{authError}</div>}
+        <button className="primary big" disabled={loading} type="submit">{loading?'Google 계정 연결 중...':mode==='login'?'Google 계정으로 로그인':'Google 계정으로 가입'}{!loading&&<ArrowRight size={18}/>}</button>
+        <p className="demo-note">{mode==='signup'&&role==='teacher'?'교사 권한은 관리자 승인 후 사용할 수 있습니다.':'Google 인증 창에서 사용할 계정을 선택해 주세요.'}</p>
+      </form>
+    </section>
+  </div>
+}
 
 function Login({ onLogin }) {
   const [role, setRole] = useState('student')
