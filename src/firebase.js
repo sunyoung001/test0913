@@ -141,6 +141,20 @@ export async function approveStudent(uid) {
   await updateDoc(doc(db, 'users', uid), { approved: true, updatedAt: serverTimestamp() })
 }
 
+export function listenStudentsByClass(className, callback, onError) {
+  if (!firebaseReady || !className) return () => {}
+  return onSnapshot(query(collection(db, 'users'), where('accountType', '==', 'student'), where('className', '==', className)), snapshot => {
+    callback(snapshot.docs.map(item => ({ id: item.id, ...item.data() })))
+  }, onError)
+}
+
+export function listenSubmissionsByTask(taskId, callback, onError) {
+  if (!firebaseReady || !taskId) return () => {}
+  return onSnapshot(query(collection(db, 'submissions'), where('taskId', '==', String(taskId))), snapshot => {
+    callback(snapshot.docs.map(item => ({ id: item.id, ...item.data() })))
+  }, onError)
+}
+
 export async function saveUserProfile(userId, profile) {
   await setDoc(doc(db, 'users', userId), {
     ...profile,

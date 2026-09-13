@@ -7,7 +7,7 @@ import {
   ImagePlus, MoreHorizontal, PencilLine, Plus, Search, Send, ShieldCheck, Sparkles,
   Upload, UserCog, Users, X, XCircle,
 } from 'lucide-react'
-import { approveStudent, approveTeacher, ensureSession, firebaseReady, listenClasses, listenPendingStudents, listenPendingTeachers, listenTasks, listenTeachers, loginRegisteredUser, logoutSession, removeTeacher, resetPassword, saveClass, saveTask, saveTeacher, saveUserProfile, submitEntry } from './firebase'
+import { approveStudent, approveTeacher, ensureSession, firebaseReady, listenClasses, listenPendingStudents, listenPendingTeachers, listenStudentsByClass, listenSubmissionsByTask, listenTasks, listenTeachers, loginRegisteredUser, logoutSession, removeTeacher, resetPassword, saveClass, saveTask, saveTeacher, saveUserProfile, submitEntry } from './firebase'
 
 const USERS = {
   student: { name: '김민준', role: '학생', className: '2학년 3반' },
@@ -31,12 +31,6 @@ const INITIAL_TASKS = [
     description: '방향키로 우주선을 움직이고 장애물에 닿으면 게임이 끝나도록 만들어 보세요.',
     hint: '장애물에 닿았는지를 계속 확인해야 해요.', status: 'done', attempts: 2,
   },
-]
-
-const CLASS_ROWS = [
-  ['김민준', '2301', '제출', '정답', '오늘 10:24'], ['박서윤', '2302', '제출', '확인 필요', '오늘 09:51'],
-  ['최도윤', '2303', '미제출', '-', '-'], ['정하은', '2304', '제출', '정답', '어제 16:42'],
-  ['윤지호', '2305', '제출', '오답', '어제 15:18'], ['한예린', '2306', '미제출', '-', '-'],
 ]
 
 function App() {
@@ -331,7 +325,7 @@ function TeacherPage({ active, onNavigate, classes, tasks, pendingStudents }) {
   const [modal, setModal] = useState(false)
   const [editTask, setEditTask] = useState(null)
   if(active === '과제 관리') return <div className="page-wrap"><PageTitle eyebrow="수업 준비" title="과제 관리" desc="학생들이 해결할 과제를 만들고 관리하세요." action={<button className="primary" onClick={()=>setModal(true)}><Plus size={18}/> 새 과제</button>}/><AssignmentManagement tasks={tasks} classes={classes} onAdd={()=>setModal(true)}/>{modal&&<TaskModal classes={classes} onClose={()=>setModal(false)}/>}</div>
-  if(active === '학생 현황') return <div className="page-wrap"><PageTitle eyebrow="학습 관리" title="학생 현황" desc="학생별 과제 진행 상황을 확인하세요."/><ClassTable full /></div>
+  if(active === '학생 현황') return <div className="page-wrap"><PageTitle eyebrow="학습 관리" title="학생 현황" desc="학생별 과제 진행 상황을 확인하세요."/><SubmissionStatus classes={classes} tasks={tasks} full/></div>
   if(active !== '과제 관리' && active !== '학생 현황') return <TeacherDashboard classes={classes} tasks={tasks} pendingStudents={pendingStudents} onNavigate={onNavigate} onAdd={()=>setModal(true)} modal={modal} onClose={()=>setModal(false)}/>
   return <div className="page-wrap"><PageTitle eyebrow="9월 13일 일요일" title="수업 대시보드" desc="2학년 3반의 학습 현황을 확인하세요." action={<button className="primary" onClick={()=>setModal(true)}><FilePlus2 size={18}/> 과제 만들기</button>}/><div className="dashboard-stats"><StatCard icon={Users} label="전체 학생" value="28" unit="명" tint="blue"/><StatCard icon={ClipboardCheck} label="이번 주 제출" value="21" unit="건" tint="green"/><StatCard icon={CheckCircle2} label="평균 정답률" value="76" unit="%" tint="yellow"/><StatCard icon={MessageCircle} label="오늘 질문" value="14" unit="개" tint="purple"/></div><div className="teacher-grid"><section className="panel dashboard-panel"><div className="section-title compact"><div><h2>2학년 3반 제출 현황</h2><p>미로를 탈출하는 고양이</p></div><button className="text-button" onClick={()=>onNavigate('학생 현황')}>전체 보기 <ArrowRight size={16}/></button></div><ClassTable/></section><section className="panel activity"><div className="section-title compact"><div><h2>최근 활동</h2><p>실시간 학습 소식</p></div></div>{[['김민준','과제를 제출했어요.','10:24'],['박서윤','질문을 남겼어요.','09:51'],['정하은','과제를 수정했어요.','어제'],['윤지호','과제를 제출했어요.','어제']].map((a,i)=><div className="activity-row" key={i}><div className="avatar alt">{a[0][0]}</div><div><b>{a[0]}</b><span>{a[1]}</span></div><time>{a[2]}</time></div>)}</section></div>{modal&&<TaskModal classes={classes} onClose={()=>setModal(false)}/>}</div>
 }
@@ -346,14 +340,62 @@ function TeacherDashboard({classes,tasks,pendingStudents,onNavigate,onAdd,modal,
     catch (error) { alert(`승인 실패: ${error.message}`) }
     finally { setApproving('') }
   }
-  return <div className="page-wrap"><PageTitle eyebrow="수업 현황" title="수업 대시보드" desc={`${selectedClass || '담당 학급'}의 학습 현황을 확인하세요.`} action={<button className="primary" onClick={onAdd}><FilePlus2 size={18}/> 과제 만들기</button>}/><div className="dashboard-class-filter"><label>담당 학급<select value={selectedClass} onChange={e=>setSelectedClass(e.target.value)}>{classes.map(c=><option key={c}>{c}</option>)}</select></label><span>관리자가 배정한 학급만 표시됩니다.</span></div><div className="dashboard-stats"><StatCard icon={Users} label="담당 학급" value={String(classes.length)} unit="개" tint="blue"/><StatCard icon={ClipboardCheck} label="등록 과제" value={String(classTasks.length)} unit="건" tint="green"/><StatCard icon={CheckCircle2} label="제출 확인" value="0" unit="건" tint="yellow"/><StatCard icon={MessageCircle} label="학생 질문" value="0" unit="개" tint="purple"/></div>{pendingStudents?.length>0&&<section className="panel teacher-list"><div className="section-title compact"><div><h2>학생 가입 승인</h2><p>{pendingStudents.length}명이 승인을 기다리고 있어요.</p></div></div>{pendingStudents.map(s=><div className="teacher-row" key={s.id}><div className="avatar alt">{s.name?.[0]||'학'}</div><div><b>{s.name||'이름 없음'}</b><span>{s.className||'학급 미지정'} · {s.studentNumber||'학번 없음'}</span></div><button className="primary small" disabled={approving===s.id} onClick={()=>approve(s.id)}>{approving===s.id?'승인 중...':'승인'}</button></div>)}</section>}<section className="panel dashboard-panel"><div className="section-title compact"><div><h2>{selectedClass} 과제</h2><p>{classTasks.length ? `${classTasks.length}개의 과제가 등록되어 있습니다.` : '등록된 과제가 없습니다.'}</p></div><button className="text-button" onClick={()=>onNavigate('과제 관리')}>과제 관리 <ArrowRight size={16}/></button></div>{classTasks.length?<div className="task-grid">{classTasks.map(t=><TaskCard key={t.id} task={t} onClick={()=>onNavigate('과제 관리')}/>)}</div>:<div className="empty-state">이 학급에 등록된 과제가 없습니다.</div>}</section>{modal&&<TaskModal classes={classes} onClose={onClose}/>}</div>
+  return <div className="page-wrap"><PageTitle eyebrow="수업 현황" title="수업 대시보드" desc={`${selectedClass || '담당 학급'}의 학습 현황을 확인하세요.`} action={<button className="primary" onClick={onAdd}><FilePlus2 size={18}/> 과제 만들기</button>}/><div className="dashboard-class-filter"><label>담당 학급<select value={selectedClass} onChange={e=>setSelectedClass(e.target.value)}>{classes.map(c=><option key={c}>{c}</option>)}</select></label><span>관리자가 배정한 학급만 표시됩니다.</span></div><div className="dashboard-stats"><StatCard icon={Users} label="담당 학급" value={String(classes.length)} unit="개" tint="blue"/><StatCard icon={ClipboardCheck} label="등록 과제" value={String(classTasks.length)} unit="건" tint="green"/><StatCard icon={CheckCircle2} label="제출 확인" value="0" unit="건" tint="yellow"/><StatCard icon={MessageCircle} label="학생 질문" value="0" unit="개" tint="purple"/></div>{pendingStudents?.length>0&&<section className="panel teacher-list"><div className="section-title compact"><div><h2>학생 가입 승인</h2><p>{pendingStudents.length}명이 승인을 기다리고 있어요.</p></div></div>{pendingStudents.map(s=><div className="teacher-row" key={s.id}><div className="avatar alt">{s.name?.[0]||'학'}</div><div><b>{s.name||'이름 없음'}</b><span>{s.className||'학급 미지정'} · {s.studentNumber||'학번 없음'}</span></div><button className="primary small" disabled={approving===s.id} onClick={()=>approve(s.id)}>{approving===s.id?'승인 중...':'승인'}</button></div>)}</section>}<section className="panel dashboard-panel"><div className="section-title compact"><div><h2>{selectedClass} 과제</h2><p>{classTasks.length ? `${classTasks.length}개의 과제가 등록되어 있습니다.` : '등록된 과제가 없습니다.'}</p></div><button className="text-button" onClick={()=>onNavigate('과제 관리')}>과제 관리 <ArrowRight size={16}/></button></div>{classTasks.length?<div className="task-grid">{classTasks.map(t=><TaskCard key={t.id} task={t} onClick={()=>onNavigate('과제 관리')}/>)}</div>:<div className="empty-state">이 학급에 등록된 과제가 없습니다.</div>}</section>{classTasks.length>0&&<SubmissionStatus className={selectedClass} classes={classes} tasks={tasks}/>}{modal&&<TaskModal classes={classes} onClose={onClose}/>}</div>
 }
 
 function PageTitle({eyebrow,title,desc,action}) { return <div className="page-heading row"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{desc}</p></div>{action}</div> }
 function StatCard({icon:Icon,label,value,unit,tint}) { return <div className="stat-card"><div className={`stat-icon ${tint}`}><Icon/></div><div><span>{label}</span><b>{value}<small>{unit}</small></b></div><span className="trend">이번 주</span></div> }
 
-function ClassTable({full=false}) { return <div className={`table-wrap ${full?'panel':''}`}><table><thead><tr><th>학생</th><th>학번</th><th>제출 상태</th><th>결과</th><th>최근 제출</th></tr></thead><tbody>{CLASS_ROWS.map((r,i)=><tr key={i}><td><div className="student-name"><span>{r[0][0]}</span><b>{r[0]}</b></div></td><td>{r[1]}</td><td><Status value={r[2]}/></td><td><Status value={r[3]}/></td><td>{r[4]}</td></tr>)}</tbody></table></div> }
-function Status({value}) { const cls = value==='정답'||value==='제출'?'ok':value==='오답'?'bad':value==='확인 필요'?'wait':'plain'; return <span className={`status ${cls}`}>{value}</span> }
+function formatSubmittedAt(timestamp) {
+  try { return timestamp.toDate().toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
+  catch { return '-' }
+}
+
+function SubmissionStatus({ className, classes, tasks, full=false }) {
+  const [selectedClass, setSelectedClass] = useState(className || classes[0] || '')
+  useEffect(() => { if (className) setSelectedClass(className) }, [className])
+  useEffect(() => { if (!className && !classes.includes(selectedClass)) setSelectedClass(classes[0] || '') }, [classes, className, selectedClass])
+  const classTasks = tasks.filter(t => t.classNames?.includes(selectedClass))
+  const [selectedTaskId, setSelectedTaskId] = useState('')
+  useEffect(() => { if (!classTasks.some(t => t.id === selectedTaskId)) setSelectedTaskId(classTasks[0]?.id || '') }, [classTasks, selectedTaskId])
+  const [roster, setRoster] = useState([])
+  const [submissions, setSubmissions] = useState([])
+  useEffect(() => listenStudentsByClass(selectedClass, setRoster, () => {}), [selectedClass])
+  useEffect(() => listenSubmissionsByTask(selectedTaskId, setSubmissions, () => {}), [selectedTaskId])
+  const selectedTask = classTasks.find(t => t.id === selectedTaskId)
+  return <section className="panel dashboard-panel">
+    <div className="section-title compact">
+      <div><h2>제출 현황</h2><p>{selectedTask ? selectedTask.title : '등록된 과제가 없습니다.'}</p></div>
+      <div className="status-filters">
+        {!className && <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)}>{classes.map(c => <option key={c}>{c}</option>)}</select>}
+        {classTasks.length > 1 && <select value={selectedTaskId} onChange={e => setSelectedTaskId(e.target.value)}>{classTasks.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</select>}
+      </div>
+    </div>
+    {classTasks.length ? <ClassTable full={full} roster={roster} submissions={submissions} /> : <div className="empty-state">이 학급에 등록된 과제가 없습니다.</div>}
+  </section>
+}
+
+function ClassTable({full=false, roster=[], submissions=[]}) {
+  const latestByStudent = {}
+  submissions.forEach(sub => {
+    const prev = latestByStudent[sub.studentId]
+    if (!prev || (sub.submittedAt?.seconds || 0) >= (prev.submittedAt?.seconds || 0)) latestByStudent[sub.studentId] = sub
+  })
+  const rows = roster.map(student => {
+    const sub = latestByStudent[student.id]
+    const state = !sub ? 'none' : sub.status === 'correct' ? 'correct' : 'wrong'
+    return { student, sub, state }
+  })
+  return <div className={`table-wrap ${full?'panel':''}`}><table><thead><tr><th>학생</th><th>학번</th><th>제출 상태</th><th>결과</th><th>최근 제출</th></tr></thead><tbody>
+    {rows.length ? rows.map(({student,sub,state}) => <tr key={student.id}>
+      <td><div className="student-name"><span className={`student-avatar ${state}`}>{student.name?.[0]||'학'}</span><b>{student.name||'이름 없음'}</b></div></td>
+      <td>{student.studentNumber||'-'}</td>
+      <td><span className={`status ${state==='none'?'plain':'ok'}`}>{state==='none'?'미제출':'제출'}</span></td>
+      <td><span className={`status ${state==='correct'?'ok':state==='wrong'?'bad':'plain'}`}>{state==='correct'?'정답':state==='wrong'?'오답':'-'}</span></td>
+      <td>{sub?.submittedAt ? formatSubmittedAt(sub.submittedAt) : '-'}</td>
+    </tr>) : <tr><td colSpan={5}><div className="empty-state">등록된 학생이 없습니다.</div></td></tr>}
+  </tbody></table></div>
+}
 
 function AssignmentManagement({onAdd, classes, tasks}) {
   const [query,setQuery]=useState(''); const [classFilter,setClassFilter]=useState('전체 학급'); const [statusFilter,setStatusFilter]=useState('전체 상태'); const [editing,setEditing]=useState(null); const [menu,setMenu]=useState(null)
