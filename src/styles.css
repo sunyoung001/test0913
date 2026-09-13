@@ -41,3 +41,5 @@ h1,h2,h3,.brand,.login-brand,.mobile-brand,.primary,.sidebar nav button{font-fam
 .secondary{border:1px solid var(--green);background:#fff;color:var(--green);border-radius:10px;padding:12px 18px;display:inline-flex;align-items:center;justify-content:center;gap:9px;font-weight:800;width:100%;margin-top:15px}
 .secondary:hover{background:var(--mint)}
 .secondary:disabled{opacity:.6;cursor:not-allowed}
+.pop-menu button.danger{color:#ae4337}
+.pop-menu button.danger:hover{background:#fae4e1}

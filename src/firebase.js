@@ -220,6 +220,10 @@ export async function fetchStoredFile(fileId) {
   return { blob: new Blob([merged], { type: meta.type || 'application/octet-stream' }), name: meta.name || 'file' }
 }
 
+export async function deleteTask(taskId) {
+  await deleteDoc(doc(db, 'tasks', String(taskId)))
+}
+
 export async function submitEntry({ taskId, file, explanation, student, resultStatus }) {
   const submissionRef = doc(collection(db, 'submissions'))
   const savedFile = await saveFileToFirestore(file, 'submission', student.uid)

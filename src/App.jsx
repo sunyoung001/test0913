@@ -7,7 +7,7 @@ import {
   ImagePlus, MoreHorizontal, PencilLine, Plus, Search, Send, ShieldCheck, Sparkles,
   Upload, UserCog, Users, X, XCircle,
 } from 'lucide-react'
-import { approveStudent, approveTeacher, ensureSession, fetchStoredFile, firebaseReady, listenClasses, listenPendingStudents, listenPendingTeachers, listenStudentsByClass, listenSubmissionsByTask, listenTasks, listenTeachers, loginRegisteredUser, logoutSession, removeTeacher, resetPassword, saveClass, saveTask, saveTeacher, saveUserProfile, submitEntry } from './firebase'
+import { approveStudent, approveTeacher, deleteTask, ensureSession, fetchStoredFile, firebaseReady, listenClasses, listenPendingStudents, listenPendingTeachers, listenStudentsByClass, listenSubmissionsByTask, listenTasks, listenTeachers, loginRegisteredUser, logoutSession, removeTeacher, resetPassword, saveClass, saveTask, saveTeacher, saveUserProfile, submitEntry } from './firebase'
 
 const USERS = {
   student: { name: '김민준', role: '학생', className: '2학년 3반' },
@@ -434,9 +434,35 @@ function ClassTable({full=false, roster=[], submissions=[]}) {
 
 function AssignmentManagement({onAdd, classes, tasks}) {
   const [query,setQuery]=useState(''); const [classFilter,setClassFilter]=useState('전체 학급'); const [statusFilter,setStatusFilter]=useState('전체 상태'); const [editing,setEditing]=useState(null); const [menu,setMenu]=useState(null)
-  const classNames=['2학년 3반','2학년 4반','1학년 2반'];
-  const visible=tasks.filter((t,i)=>t.title.includes(query)&&(classFilter==='전체 학급'||(t.classNames||[classNames[i]]).includes(classFilter))&&(statusFilter==='전체 상태'||(statusFilter==='마감'?t.status==='done':t.status!=='done')))
-  return <div className="management"><div className="filter-bar"><div className="search"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="과제 이름으로 검색"/></div><select value={classFilter} onChange={e=>setClassFilter(e.target.value)}><option>전체 학급</option>{classes.map(x=><option key={x}>{x}</option>)}</select><select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option>전체 상태</option><option>진행 중</option><option>마감</option></select></div><div className="assignment-list">{visible.length?visible.map((t)=>{const i=INITIAL_TASKS.indexOf(t);return <div className="assignment-row" key={t.id}><div className={`assignment-index i${i}`}>0{i+1}</div><div className="assignment-info"><div><span className="subject">{t.subject}</span><span className={`badge ${i===2?'neutral':'success'}`}>{i===2?'마감':'진행 중'}</span></div><h3>{t.title}</h3><p>{t.classNames?.join(', ')||classNames[i]} · {t.deadline||t.due} 마감</p></div><div className="submission-count"><b>{i===0?'21':i===1?'8':'28'}<small> / 28명</small></b><span>제출</span></div><button aria-label="과제 수정" className="icon-btn" onClick={()=>setEditing(t)}><PencilLine size={18}/></button><div className="more-wrap"><button aria-label="더보기" className="icon-btn" onClick={()=>setMenu(menu===t.id?null:t.id)}><MoreHorizontal size={18}/></button>{menu===t.id&&<div className="pop-menu"><button onClick={()=>{setEditing(t);setMenu(null)}}>수정하기</button><button onClick={()=>{navigator.clipboard?.writeText(`${location.origin}/task/${t.id}`);alert('과제 링크가 복사되었습니다.');setMenu(null)}}>링크 복사</button></div>}</div></div>}):<div className="empty-state">조건에 맞는 과제가 없습니다.</div>}</div><button className="add-dashed" onClick={onAdd}><Plus/> 새 과제 만들기</button>{editing&&<TaskModal classes={classes} task={editing} onClose={()=>setEditing(null)}/>}</div> }
+  const isTaskClosed = t => t.deadline ? new Date(t.deadline) < new Date() : false
+  const visible=tasks.filter(t=>t.title.includes(query)&&(classFilter==='전체 학급'||t.classNames?.includes(classFilter))&&(statusFilter==='전체 상태'||(statusFilter==='마감'?isTaskClosed(t):!isTaskClosed(t))))
+  return <div className="management"><div className="filter-bar"><div className="search"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="과제 이름으로 검색"/></div><select value={classFilter} onChange={e=>setClassFilter(e.target.value)}><option>전체 학급</option>{classes.map(x=><option key={x}>{x}</option>)}</select><select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option>전체 상태</option><option>진행 중</option><option>마감</option></select></div><div className="assignment-list">{visible.length?visible.map((t,i)=><AssignmentRow key={t.id} task={t} index={i} closed={isTaskClosed(t)} onEdit={()=>{setEditing(t);setMenu(null)}} menuOpen={menu===t.id} onToggleMenu={()=>setMenu(menu===t.id?null:t.id)} onCloseMenu={()=>setMenu(null)}/>):<div className="empty-state">조건에 맞는 과제가 없습니다.</div>}</div><button className="add-dashed" onClick={onAdd}><Plus/> 새 과제 만들기</button>{editing&&<TaskModal classes={classes} task={editing} onClose={()=>setEditing(null)}/>}</div> }
+
+function AssignmentRow({task, index, closed, onEdit, menuOpen, onToggleMenu, onCloseMenu}) {
+  const classNames = task.classNames || []
+  const [rosterByClass, setRosterByClass] = useState({})
+  const [submissions, setSubmissions] = useState([])
+  useEffect(() => {
+    const unsubs = classNames.map(c => listenStudentsByClass(c, students => setRosterByClass(prev => ({...prev, [c]: students})), () => {}))
+    return () => unsubs.forEach(unsub => unsub())
+  }, [classNames.join(',')])
+  useEffect(() => listenSubmissionsByTask(task.id, setSubmissions, () => {}), [task.id])
+  const rosterCount = Object.values(rosterByClass).reduce((sum, list) => sum + list.length, 0)
+  const submittedCount = new Set(submissions.map(s => s.studentId)).size
+  const [deleting, setDeleting] = useState(false)
+  const handleDelete = async () => {
+    onCloseMenu()
+    if (!confirm(`"${task.title}" 과제를 삭제할까요? 삭제하면 되돌릴 수 없습니다.`)) return
+    try { setDeleting(true); await deleteTask(task.id) } catch (error) { alert(`삭제 실패: ${error.message}`) } finally { setDeleting(false) }
+  }
+  return <div className="assignment-row">
+    <div className={`assignment-index i${index % 3}`}>{String(index + 1).padStart(2, '0')}</div>
+    <div className="assignment-info"><div><span className="subject">{task.subject}</span><span className={`badge ${closed ? 'neutral' : 'success'}`}>{closed ? '마감' : '진행 중'}</span></div><h3>{task.title}</h3><p>{classNames.join(', ') || '대상 학급 없음'} · {task.deadline || task.due} 마감</p></div>
+    <div className="submission-count"><b>{submittedCount}<small> / {rosterCount}명</small></b><span>제출</span></div>
+    <button aria-label="과제 수정" className="icon-btn" onClick={onEdit}><PencilLine size={18}/></button>
+    <div className="more-wrap"><button aria-label="더보기" className="icon-btn" onClick={onToggleMenu}><MoreHorizontal size={18}/></button>{menuOpen && <div className="pop-menu"><button onClick={onEdit}>수정하기</button><button onClick={() => { navigator.clipboard?.writeText(`${location.origin}/task/${task.id}`); alert('과제 링크가 복사되었습니다.'); onCloseMenu() }}>링크 복사</button><button className="danger" disabled={deleting} onClick={handleDelete}>{deleting ? '삭제 중...' : '삭제하기'}</button></div>}</div>
+  </div>
+}
 
 function TaskModal({onClose,task,classes:availableClasses}) {
   const [saved,setSaved]=useState(false); const [selectedClasses,setSelectedClasses]=useState(task?.classNames||availableClasses.slice(0,1)); const [codeFile,setCodeFile]=useState(null); const [answerFile,setAnswerFile]=useState(null); const [fileError,setFileError]=useState(''); const [saving,setSaving]=useState(false)
