@@ -26,8 +26,8 @@ function extractJson(text) {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: '허용되지 않은 요청입니다.' })
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) return res.status(503).json({ error: '질문 기능이 아직 준비되지 않았습니다.' })
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
+  if (!apiKey) return res.status(503).json({ error: '질문 서버의 환경 변수가 적용되지 않았습니다. GEMINI_API_KEY를 Production 환경에 저장한 뒤 다시 배포해 주세요.' })
 
   const message = typeof req.body?.message === 'string' ? req.body.message.trim().slice(0, 3000) : ''
   const image = parseDataUrl(req.body?.image)
