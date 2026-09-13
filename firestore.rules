@@ -3,12 +3,15 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function userRole() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role; }
-    function isTeacher() { return signedIn() && (userRole() == 'teacher' || userRole() == 'admin'); }
-    function isAdmin() { return signedIn() && userRole() == 'admin'; }
+    function isAdmin() { return signedIn() && request.auth.token.email == 'su1413911@gmail.com'; }
+    function isTeacher() { return isAdmin() || (signedIn() && userRole() == 'teacher'); }
 
     match /users/{userId} {
-      allow read: if signedIn();
-      allow create, update: if signedIn() && request.auth.uid == userId;
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if signedIn() && request.auth.uid == userId
+                    && !request.resource.data.keys().hasAny(['role']);
+      allow update: if isAdmin() || (signedIn() && request.auth.uid == userId
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']));
     }
     match /tasks/{taskId} {
       allow read: if signedIn();

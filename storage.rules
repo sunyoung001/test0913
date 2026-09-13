@@ -1,12 +1,19 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function isAdmin() { return signedIn() && request.auth.token.email == 'su1413911@gmail.com'; }
+    function isTeacher() {
+      return isAdmin() || (signedIn() && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'teacher');
+    }
     match /answers/{taskId}/{fileName} {
-      allow read, write: if request.auth != null && request.resource.size < 20 * 1024 * 1024;
+      allow read: if isTeacher();
+      allow write: if isTeacher() && request.resource.size < 20 * 1024 * 1024;
     }
     match /submissions/{taskId}/{studentId}/{fileName} {
-      allow read, write: if request.auth != null && request.auth.uid == studentId
-                         && request.resource.size < 20 * 1024 * 1024;
+      allow read: if signedIn() && (request.auth.uid == studentId || isTeacher());
+      allow write: if signedIn() && request.auth.uid == studentId
+                   && request.resource.size < 20 * 1024 * 1024;
     }
   }
 }

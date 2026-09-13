@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth, signInAnonymously } from 'firebase/auth'
+import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
 import {
   addDoc, collection, doc, getFirestore, onSnapshot, orderBy, query,
   serverTimestamp, setDoc, updateDoc,
@@ -23,8 +23,13 @@ export const storage = app ? getStorage(app) : null
 
 export async function ensureSession(role, name) {
   if (!firebaseReady) return null
-  const credential = auth.currentUser ? { user: auth.currentUser } : await signInAnonymously(auth)
-  await setDoc(doc(db, 'users', credential.user.uid), { name, role, updatedAt: serverTimestamp() }, { merge: true })
+  const credential = auth.currentUser ? { user: auth.currentUser } : await signInWithPopup(auth, new GoogleAuthProvider())
+  await setDoc(doc(db, 'users', credential.user.uid), {
+    name: credential.user.displayName || name,
+    email: credential.user.email,
+    lastSelectedScreen: role,
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
   return credential.user
 }
 
