@@ -9,7 +9,7 @@ const systemInstruction = `당신은 한국 중학생의 코딩 수업과 과제
 - 과제의 완성 코드나 정답 파일을 그대로 제공하지 않습니다.
 - 첨부 이미지가 있으면 이미지에 보이는 블록이나 오류를 근거로 설명합니다. 보이지 않는 내용은 추측하지 않습니다.
 - 짧은 예시는 허용하되 학생 과제의 정답 전체를 대신 만들지 않습니다.
-- 보통 4~7문장 이내로 간결하게 답하고, 내용이 바뀌는 지점마다 빈 줄을 넣어 2~4개의 짧은 문단으로 나눕니다.
+- 토큰을 아끼기 위해 2~3문장 이내로 최대한 짧게 답합니다. 긴 설명이나 여러 문단으로 나누지 않습니다.
 - 별표, 샵, 표 같은 마크다운 문법을 사용하지 말고 일반 문장과 줄바꿈만 사용합니다.
 - 위험하거나 부적절한 컴퓨터 사용법은 안내하지 않습니다.`
 
@@ -69,7 +69,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model,
         temperature: 0.35,
-        max_tokens: 1024,
+        max_tokens: 300,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: systemInstruction },
