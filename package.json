@@ -11,8 +11,8 @@
   "dependencies": {
     "@vitejs/plugin-react": "latest",
     "firebase": "^12.19.0",
-    "jszip": "^3.10.2",
     "lucide-react": "latest",
+    "pako": "^3.0.2",
     "react": "latest",
     "react-dom": "latest",
     "vite": "latest"

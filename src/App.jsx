@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import JSZip from 'jszip'
+import { ungzip } from 'pako'
 import {
   ArrowLeft, ArrowRight, BarChart3, BookOpen, Check, CheckCircle2,
   ChevronDown, CircleUserRound, ClipboardCheck, Clock3, Code2, Crown,
@@ -32,6 +32,31 @@ const INITIAL_TASKS = [
     hint: '장애물에 닿았는지를 계속 확인해야 해요.', status: 'done', attempts: 2,
   },
 ]
+
+function readTarEntries(buffer) {
+  const entries = []
+  const decoder = new TextDecoder()
+  let offset = 0
+  while (offset + 512 <= buffer.length) {
+    const header = buffer.subarray(offset, offset + 512)
+    if (header.every(byte => byte === 0)) break
+    const name = decoder.decode(header.subarray(0, 100)).replace(/\0.*$/, '')
+    const sizeOctal = decoder.decode(header.subarray(124, 136)).replace(/\0.*$/, '').trim()
+    const size = parseInt(sizeOctal, 8) || 0
+    const dataStart = offset + 512
+    entries.push({ name, bytes: buffer.subarray(dataStart, dataStart + size) })
+    offset = dataStart + Math.ceil(size / 512) * 512
+  }
+  return entries
+}
+
+async function readEntProjectJson(file) {
+  const buffer = await file.arrayBuffer()
+  const tarBytes = ungzip(new Uint8Array(buffer))
+  const entry = readTarEntries(tarBytes).find(item => /project\.json$/i.test(item.name))
+  if (!entry) throw new Error('project.json not found')
+  return new TextDecoder('utf-8').decode(entry.bytes)
+}
 
 function App() {
   const [userType, setUserType] = useState(null)
@@ -290,12 +315,8 @@ function TaskWorkspace({ task, student, onBack, onUpdate }) {
     try{
       setUploading(true); setFileError('')
       let projectJson
-      try {
-        const zip = await JSZip.loadAsync(entryFile)
-        const entry = Object.values(zip.files).find(f => !f.dir && /project\.json$/i.test(f.name))
-        if (!entry) throw new Error('project.json not found')
-        projectJson = await entry.async('text')
-      } catch { throw new Error('올바른 엔트리(.ent) 파일이 아니거나 손상되었어요. 다시 확인해 주세요.') }
+      try { projectJson = await readEntProjectJson(entryFile) }
+      catch { throw new Error('올바른 엔트리(.ent) 파일이 아니거나 손상되었어요. 다시 확인해 주세요.') }
       const response = await fetch('/api/grade', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ title: task.title, description: task.description, criteria: task.criteria, project: projectJson.slice(0, 20000) }) })
       const data = await response.json().catch(()=>({}))
       if(!response.ok) throw new Error(data.error || '채점에 실패했습니다.')
