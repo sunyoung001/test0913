@@ -7,12 +7,12 @@ import {
 import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage'
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyD2fRWQcr3aXgFkqNbz0YhxwZRzq9ub7ec',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'test-pizza-qeyr.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'test-pizza-qeyr',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'test-pizza-qeyr.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '1024973991639',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:1024973991639:web:cab56f38e9e543b565ca92',
 }
 
 export const firebaseReady = Object.values(firebaseConfig).every(Boolean)
