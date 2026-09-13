@@ -4,7 +4,7 @@ import {
   addDoc, collection, doc, getFirestore, onSnapshot, orderBy, query,
   serverTimestamp, setDoc, updateDoc,
 } from 'firebase/firestore'
-import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage'
+import { getDownloadURL, getStorage, ref, uploadBytesResumable } from 'firebase/storage'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyD2fRWQcr3aXgFkqNbz0YhxwZRzq9ub7ec',
@@ -20,6 +20,18 @@ const app = firebaseReady ? initializeApp(firebaseConfig) : null
 export const auth = app ? getAuth(app) : null
 export const db = app ? getFirestore(app) : null
 export const storage = app ? getStorage(app) : null
+
+function uploadWithTimeout(fileRef, file, metadata = undefined) {
+  return new Promise((resolve, reject) => {
+    const task = uploadBytesResumable(fileRef, file, metadata)
+    const timer = setTimeout(() => {
+      task.cancel()
+      reject(new Error('Firebase Storage가 준비되지 않았거나 응답하지 않습니다. Firebase Console에서 Storage를 생성해 주세요.'))
+    }, 20000)
+    task.then(snapshot => { clearTimeout(timer); resolve(snapshot) })
+      .catch(error => { clearTimeout(timer); reject(error) })
+  })
+}
 
 export async function ensureSession(role, name) {
   if (!firebaseReady) return null
@@ -58,7 +70,7 @@ export async function saveTask({ task, title, classNames, deadline, description,
   let answerFileName = task?.answerFileName || ''
   if (answerFile) {
     const fileRef = ref(storage, `answers/${taskRef.id}/${Date.now()}-${answerFile.name}`)
-    await uploadBytes(fileRef, answerFile)
+    await uploadWithTimeout(fileRef, answerFile)
     answerFileUrl = await getDownloadURL(fileRef)
     answerFileName = answerFile.name
   }
@@ -71,7 +83,7 @@ export async function saveTask({ task, title, classNames, deadline, description,
 export async function submitEntry({ taskId, file, explanation, student }) {
   const submissionRef = doc(collection(db, 'submissions'))
   const fileRef = ref(storage, `submissions/${taskId}/${student.uid}/${Date.now()}-${file.name}`)
-  await uploadBytes(fileRef, file, { contentType: file.type || 'application/octet-stream' })
+  await uploadWithTimeout(fileRef, file, { contentType: file.type || 'application/octet-stream' })
   const fileUrl = await getDownloadURL(fileRef)
   await setDoc(submissionRef, {
     taskId: String(taskId), studentId: student.uid, studentName: student.name,
