@@ -15,9 +15,9 @@ function extractJson(text) {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: '허용되지 않은 요청입니다.' })
-  const rawApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
+  const rawApiKey = process.env.OPENAI_API_KEY
   const apiKey = rawApiKey?.trim().replace(/^['"]|['"]$/g, '')
-  if (!apiKey) return res.status(503).json({ error: '채점 서버의 환경 변수가 적용되지 않았습니다. GEMINI_API_KEY를 Production 환경에 저장한 뒤 다시 배포해 주세요.' })
+  if (!apiKey) return res.status(503).json({ error: '채점 서버의 환경 변수가 적용되지 않았습니다. OPENAI_API_KEY를 Production 환경에 저장한 뒤 다시 배포해 주세요.' })
 
   const criteria = typeof req.body?.criteria === 'string' ? req.body.criteria.trim().slice(0, 2000) : ''
   const project = typeof req.body?.project === 'string' ? req.body.project.slice(0, 20000) : ''
@@ -37,30 +37,31 @@ export default async function handler(req, res) {
   const timer = setTimeout(() => controller.abort(), 25000)
 
   try {
-    const model = process.env.GEMINI_MODEL || 'gemini-3.5-flash'
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       signal: controller.signal,
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        contents: [{ role: 'user', parts: [{ text: context }] }],
-        generationConfig: {
-          temperature: 0.2,
-          maxOutputTokens: 4096,
-          responseMimeType: 'application/json'
-        }
+        model,
+        temperature: 0.2,
+        max_tokens: 1024,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: systemInstruction },
+          { role: 'user', content: context }
+        ]
       })
     })
     const data = await response.json()
     if (!response.ok) throw new Error(data?.error?.message || '채점에 실패했습니다.')
-    const text = data?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('')
+    const text = data?.choices?.[0]?.message?.content
     if (!text) throw new Error('채점 결과를 받지 못했습니다.')
     const result = extractJson(text)
     const correct = !!result.correct
     return res.status(200).json({ correct, feedback: String(result.feedback || '').trim() || (correct ? '정답이에요!' : '다시 한번 확인해 보세요.') })
   } catch (error) {
-    console.error('Gemini grading failed:', error?.message || error)
+    console.error('OpenAI grading failed:', error?.message || error)
     const message = error?.name === 'AbortError'
       ? '채점 시간이 오래 걸리고 있습니다. 잠시 후 다시 시도해 주세요.'
       : error?.message ? `채점 중 오류가 발생했습니다: ${error.message}` : '채점 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
