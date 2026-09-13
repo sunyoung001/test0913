@@ -17,19 +17,22 @@ const USERS = {
 
 const INITIAL_TASKS = [
   {
-    id: 1, title: '미로를 탈출하는 고양이', subject: '반복 구조', due: '9월 18일',
+    id: 1, title: '미로를 탈출하는 고양이', subject: '반복 구조', due: '9월 18일', classNames: ['체험 학급'],
     description: '고양이가 벽에 닿지 않고 깃발까지 이동하도록 블록을 조합해 보세요.',
     hint: '같은 움직임이 몇 번 반복되는지 먼저 찾아보세요.', status: 'progress', attempts: 1,
+    criteria: '반복 블록을 사용해 고양이가 벽에 닿지 않고 깃발까지 이동해야 합니다.',
   },
   {
-    id: 2, title: '점수 계산기 만들기', subject: '변수와 연산', due: '9월 22일',
+    id: 2, title: '점수 계산기 만들기', subject: '변수와 연산', due: '9월 22일', classNames: ['체험 학급'],
     description: '정답을 맞힐 때마다 점수가 10점씩 올라가는 프로그램을 만들어 보세요.',
     hint: '점수를 저장할 상자 하나가 필요해요.', status: 'todo', attempts: 0,
+    criteria: '점수를 저장하는 변수가 있고, 정답을 맞히는 이벤트가 발생할 때마다 그 변수 값이 10씩 증가해야 합니다.',
   },
   {
-    id: 3, title: '우주선 장애물 피하기', subject: '조건문', due: '9월 12일',
+    id: 3, title: '우주선 장애물 피하기', subject: '조건문', due: '9월 12일', classNames: ['체험 학급'],
     description: '방향키로 우주선을 움직이고 장애물에 닿으면 게임이 끝나도록 만들어 보세요.',
     hint: '장애물에 닿았는지를 계속 확인해야 해요.', status: 'done', attempts: 2,
+    criteria: '방향키로 우주선을 움직일 수 있고, 우주선이 장애물에 닿았는지를 조건문으로 계속 확인해서 닿으면 게임을 종료해야 합니다.',
   },
 ]
 
@@ -58,6 +61,8 @@ async function readEntProjectJson(file) {
   return new TextDecoder('utf-8').decode(entry.bytes)
 }
 
+function guestBlock() { alert('체험 모드에서는 이 기능을 사용할 수 없어요. 실제 계정으로 로그인해 주세요.') }
+
 function App() {
   const [userType, setUserType] = useState(null)
   const [active, setActive] = useState('홈')
@@ -74,11 +79,11 @@ function App() {
   const [pendingTeachers, setPendingTeachers] = useState([])
   const [pendingStudents, setPendingStudents] = useState([])
 
-  useEffect(() => firebaseUser ? listenTasks(items => { setTasks(items); setServerError('') }, error => setServerError(error.message), { admin: firebaseUser.role === 'admin', classNames: firebaseUser.role === 'student' ? [firebaseUser.className] : firebaseUser.classNames }) : () => {}, [firebaseUser])
-  useEffect(() => firebaseUser ? listenClasses(items => { if (items.length) setClasses(items.map(item => item.name)) }, error => setServerError(error.message)) : () => {}, [firebaseUser])
-  useEffect(() => firebaseUser?.role === 'admin' ? listenTeachers(setTeachers, error => setServerError(error.message)) : () => {}, [firebaseUser])
-  useEffect(() => firebaseUser?.role === 'admin' ? listenPendingTeachers(setPendingTeachers, error => setServerError(error.message)) : () => {}, [firebaseUser])
-  useEffect(() => firebaseUser?.role === 'teacher' ? listenPendingStudents(firebaseUser.classNames, setPendingStudents, error => setServerError(error.message)) : () => {}, [firebaseUser])
+  useEffect(() => firebaseUser && !firebaseUser.isGuest ? listenTasks(items => { setTasks(items); setServerError('') }, error => setServerError(error.message), { admin: firebaseUser.role === 'admin', classNames: firebaseUser.role === 'student' ? [firebaseUser.className] : firebaseUser.classNames }) : () => {}, [firebaseUser])
+  useEffect(() => firebaseUser && !firebaseUser.isGuest ? listenClasses(items => { if (items.length) setClasses(items.map(item => item.name)) }, error => setServerError(error.message)) : () => {}, [firebaseUser])
+  useEffect(() => firebaseUser?.role === 'admin' && !firebaseUser.isGuest ? listenTeachers(setTeachers, error => setServerError(error.message)) : () => {}, [firebaseUser])
+  useEffect(() => firebaseUser?.role === 'admin' && !firebaseUser.isGuest ? listenPendingTeachers(setPendingTeachers, error => setServerError(error.message)) : () => {}, [firebaseUser])
+  useEffect(() => firebaseUser?.role === 'teacher' && !firebaseUser.isGuest ? listenPendingStudents(firebaseUser.classNames, setPendingStudents, error => setServerError(error.message)) : () => {}, [firebaseUser])
   useEffect(() => localStorage.setItem('thinkingcoding-classes', JSON.stringify(classes)), [classes])
 
   const login = async (role, credentials) => {
@@ -102,7 +107,14 @@ function App() {
     } catch (error) { setServerError(error.message); throw error }
   }
 
-  if (!userType) return <AuthPage onLogin={login} onRegister={register} classes={classes} />
+  const startGuest = role => {
+    const names = { student: '체험 학생', teacher: '체험 교사', admin: '체험 관리자' }
+    setFirebaseUser({ uid: 'guest', name: names[role], role, className: '체험 학급', classNames: ['체험 학급'], isGuest: true })
+    setUserType(role)
+    setServerError('')
+  }
+
+  if (!userType) return <AuthPage onLogin={login} onRegister={register} onGuest={startGuest} classes={classes} />
 
   const user = firebaseUser ? { ...USERS[userType], name: firebaseUser.name || USERS[userType].name, className: firebaseUser.className || firebaseUser.classNames?.join(', ') || USERS[userType].className } : USERS[userType]
   const navigation = userType === 'student'
@@ -111,9 +123,10 @@ function App() {
       ? [['대시보드', LayoutDashboard], ['과제 관리', ClipboardCheck], ['학생 현황', Users]]
       : [['관리', LayoutDashboard], ['교사 관리', UserCog], ['학급 관리', Users], ['권한 설정', ShieldCheck]]
 
+  const isGuest = !!firebaseUser?.isGuest
   const page = userType === 'student'
     ? (selectedTask ? <TaskWorkspace task={selectedTask} student={firebaseUser} onBack={() => setSelectedTask(null)} onUpdate={(patch) => setTasks(t => t.map(x => x.id === selectedTask.id ? {...x, ...patch} : x))} /> : <StudentHome tasks={tasks} onSelect={setSelectedTask} active={active} onNavigate={setActive} />)
-    : userType === 'teacher' ? <TeacherPage active={active} tasks={tasks} classes={firebaseUser?.role==='admin'||!firebaseUser?.classNames?.length?classes:firebaseUser.classNames} pendingStudents={pendingStudents} onNavigate={setActive} /> : <AdminPage active={active} teachers={teachers} pendingTeachers={pendingTeachers} classes={classes} onClassAdded={name=>setClasses(x=>[...new Set([...x,name])].sort())} />
+    : userType === 'teacher' ? <TeacherPage active={active} tasks={tasks} classes={firebaseUser?.role==='admin'||!firebaseUser?.classNames?.length?classes:firebaseUser.classNames} pendingStudents={pendingStudents} onNavigate={setActive} isGuest={isGuest} /> : <AdminPage active={active} teachers={teachers} pendingTeachers={pendingTeachers} classes={classes} onClassAdded={name=>setClasses(x=>[...new Set([...x,name])].sort())} isGuest={isGuest} />
 
   return (
     <div className="app-shell">
@@ -130,6 +143,7 @@ function App() {
       {mobileNav && <div className="nav-overlay" onClick={() => setMobileNav(false)} />}
       <main className="main">
         <header className="topbar"><button className="menu-btn" onClick={() => setMobileNav(true)}><Menu/></button><div className="mobile-brand"><Logo/><b>생각코딩</b></div><div className="role-pill">{user.role}</div></header>
+        {isGuest && <div className="firebase-banner">체험 모드입니다. 둘러볼 수는 있지만 저장, 승인, 삭제 같은 기능은 사용할 수 없어요.</div>}
         {serverError && <div className="firebase-banner error">서버 연결 오류: {serverError}</div>}
         {page}
       </main>
@@ -139,7 +153,7 @@ function App() {
 
 function Logo() { return <div className="logo"><Code2 size={20}/></div> }
 
-function AuthPage({ onLogin, onRegister, classes }) {
+function AuthPage({ onLogin, onRegister, onGuest, classes }) {
   const [mode, setMode] = useState('login')
   const [role, setRole] = useState('student')
   const [name, setName] = useState('')
@@ -203,6 +217,13 @@ function AuthPage({ onLogin, onRegister, classes }) {
         <button className="primary big" disabled={loading} type="submit">{loading?'계정 확인 중...':mode==='login'&&role==='admin'?'관리자 로그인':mode==='login'?'이메일로 로그인':'이메일로 회원가입'}{!loading&&<ArrowRight size={18}/>}</button>
         {role!=='admin'&&<><div className="auth-divider"><span>또는</span></div><button className="google-auth-button" disabled={loading} type="button" onClick={()=>authenticate(true)}>G&nbsp;&nbsp; Google 계정으로 계속</button></>}
         <p className="demo-note">{mode==='login'&&role==='admin'?'관리자 전용 계정으로 로그인합니다.':mode==='signup'&&role==='teacher'?'교사 권한은 관리자 승인 후 사용할 수 있습니다.':'Google 인증 창에서 사용할 계정을 선택해 주세요.'}</p>
+        <div className="auth-divider"><span>계정 없이 둘러보기</span></div>
+        <div className="guest-buttons">
+          <button type="button" onClick={()=>onGuest('student')}>학생 체험</button>
+          <button type="button" onClick={()=>onGuest('teacher')}>교사 체험</button>
+          <button type="button" onClick={()=>onGuest('admin')}>관리자 체험</button>
+        </div>
+        <p className="demo-note">체험 모드에서는 화면만 둘러볼 수 있고 저장, 승인, 삭제는 되지 않아요.</p>
       </form>
     </section>
   </div>
@@ -335,7 +356,7 @@ function TaskWorkspace({ task, student, onBack, onUpdate }) {
       const data = await response.json().catch(()=>({}))
       if(!response.ok) throw new Error(data.error || '채점에 실패했습니다.')
       const correct = !!data.correct
-      await submitEntry({taskId:task.id,file:entryFile,explanation:data.feedback||'',student,resultStatus:correct?'correct':'wrong'})
+      if(!student.isGuest) await submitEntry({taskId:task.id,file:entryFile,explanation:data.feedback||'',student,resultStatus:correct?'correct':'wrong'})
       setResult(correct?'correct':'wrong')
       onUpdate({status:correct?'done':'progress',attempts:(task.attempts||0)+1})
     }catch(error){ setFileError(`제출 실패: ${error.message}`) }
@@ -356,21 +377,23 @@ function QuestionHistory() { return <div className="history-list">{[
   ['미로를 탈출하는 고양이','반복 블록을 몇 번 사용해야 하나요?','오늘 10:18'],['점수 계산기 만들기','점수를 계속 기억하게 하려면 어떻게 하나요?','9월 10일'],['우주선 장애물 피하기','장애물에 닿은 것을 어떻게 알 수 있나요?','9월 8일']
 ].map((q,i)=><div className="history-item" key={i}><div className="history-icon"><MessageCircle/></div><div><span>{q[0]}</span><h3>{q[1]}</h3><p>{q[2]}</p></div><ArrowRight/></div>)}</div> }
 
-function TeacherPage({ active, onNavigate, classes, tasks, pendingStudents }) {
+function TeacherPage({ active, onNavigate, classes, tasks, pendingStudents, isGuest }) {
   const [modal, setModal] = useState(false)
   const [editTask, setEditTask] = useState(null)
-  if(active === '과제 관리') return <div className="page-wrap"><PageTitle eyebrow="수업 준비" title="과제 관리" desc="학생들이 해결할 과제를 만들고 관리하세요." action={<button className="primary" onClick={()=>setModal(true)}><Plus size={18}/> 새 과제</button>}/><AssignmentManagement tasks={tasks} classes={classes} onAdd={()=>setModal(true)}/>{modal&&<TaskModal classes={classes} onClose={()=>setModal(false)}/>}</div>
+  const openModal = () => isGuest ? guestBlock() : setModal(true)
+  if(active === '과제 관리') return <div className="page-wrap"><PageTitle eyebrow="수업 준비" title="과제 관리" desc="학생들이 해결할 과제를 만들고 관리하세요." action={<button className="primary" onClick={openModal}><Plus size={18}/> 새 과제</button>}/><AssignmentManagement tasks={tasks} classes={classes} onAdd={openModal} isGuest={isGuest}/>{modal&&<TaskModal classes={classes} onClose={()=>setModal(false)}/>}</div>
   if(active === '학생 현황') return <div className="page-wrap"><PageTitle eyebrow="학습 관리" title="학생 현황" desc="학생별 과제 진행 상황을 확인하세요."/><SubmissionStatus classes={classes} tasks={tasks} full/></div>
-  if(active !== '과제 관리' && active !== '학생 현황') return <TeacherDashboard classes={classes} tasks={tasks} pendingStudents={pendingStudents} onNavigate={onNavigate} onAdd={()=>setModal(true)} modal={modal} onClose={()=>setModal(false)}/>
+  if(active !== '과제 관리' && active !== '학생 현황') return <TeacherDashboard classes={classes} tasks={tasks} pendingStudents={pendingStudents} onNavigate={onNavigate} onAdd={openModal} modal={modal} onClose={()=>setModal(false)} isGuest={isGuest}/>
   return <div className="page-wrap"><PageTitle eyebrow="9월 13일 일요일" title="수업 대시보드" desc="2학년 3반의 학습 현황을 확인하세요." action={<button className="primary" onClick={()=>setModal(true)}><FilePlus2 size={18}/> 과제 만들기</button>}/><div className="dashboard-stats"><StatCard icon={Users} label="전체 학생" value="28" unit="명" tint="blue"/><StatCard icon={ClipboardCheck} label="이번 주 제출" value="21" unit="건" tint="green"/><StatCard icon={CheckCircle2} label="평균 정답률" value="76" unit="%" tint="yellow"/><StatCard icon={MessageCircle} label="오늘 질문" value="14" unit="개" tint="purple"/></div><div className="teacher-grid"><section className="panel dashboard-panel"><div className="section-title compact"><div><h2>2학년 3반 제출 현황</h2><p>미로를 탈출하는 고양이</p></div><button className="text-button" onClick={()=>onNavigate('학생 현황')}>전체 보기 <ArrowRight size={16}/></button></div><ClassTable/></section><section className="panel activity"><div className="section-title compact"><div><h2>최근 활동</h2><p>실시간 학습 소식</p></div></div>{[['김민준','과제를 제출했어요.','10:24'],['박서윤','질문을 남겼어요.','09:51'],['정하은','과제를 수정했어요.','어제'],['윤지호','과제를 제출했어요.','어제']].map((a,i)=><div className="activity-row" key={i}><div className="avatar alt">{a[0][0]}</div><div><b>{a[0]}</b><span>{a[1]}</span></div><time>{a[2]}</time></div>)}</section></div>{modal&&<TaskModal classes={classes} onClose={()=>setModal(false)}/>}</div>
 }
 
-function TeacherDashboard({classes,tasks,pendingStudents,onNavigate,onAdd,modal,onClose}) {
+function TeacherDashboard({classes,tasks,pendingStudents,onNavigate,onAdd,modal,onClose,isGuest}) {
   const [selectedClass,setSelectedClass]=useState(classes[0]||'')
   const [approving,setApproving]=useState('')
   useEffect(()=>{if(!classes.includes(selectedClass))setSelectedClass(classes[0]||'')},[classes,selectedClass])
   const classTasks=tasks.filter(t=>t.classNames?.includes(selectedClass))
   const approve = async uid => {
+    if (isGuest) return guestBlock()
     try { setApproving(uid); await approveStudent(uid) }
     catch (error) { alert(`승인 실패: ${error.message}`) }
     finally { setApproving('') }
@@ -432,13 +455,14 @@ function ClassTable({full=false, roster=[], submissions=[]}) {
   </tbody></table></div>
 }
 
-function AssignmentManagement({onAdd, classes, tasks}) {
+function AssignmentManagement({onAdd, classes, tasks, isGuest}) {
   const [query,setQuery]=useState(''); const [classFilter,setClassFilter]=useState('전체 학급'); const [statusFilter,setStatusFilter]=useState('전체 상태'); const [editing,setEditing]=useState(null); const [menu,setMenu]=useState(null)
   const isTaskClosed = t => t.deadline ? new Date(t.deadline) < new Date() : false
+  const openEdit = t => isGuest ? guestBlock() : (setEditing(t), setMenu(null))
   const visible=tasks.filter(t=>t.title.includes(query)&&(classFilter==='전체 학급'||t.classNames?.includes(classFilter))&&(statusFilter==='전체 상태'||(statusFilter==='마감'?isTaskClosed(t):!isTaskClosed(t))))
-  return <div className="management"><div className="filter-bar"><div className="search"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="과제 이름으로 검색"/></div><select value={classFilter} onChange={e=>setClassFilter(e.target.value)}><option>전체 학급</option>{classes.map(x=><option key={x}>{x}</option>)}</select><select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option>전체 상태</option><option>진행 중</option><option>마감</option></select></div><div className="assignment-list">{visible.length?visible.map((t,i)=><AssignmentRow key={t.id} task={t} index={i} closed={isTaskClosed(t)} onEdit={()=>{setEditing(t);setMenu(null)}} menuOpen={menu===t.id} onToggleMenu={()=>setMenu(menu===t.id?null:t.id)} onCloseMenu={()=>setMenu(null)}/>):<div className="empty-state">조건에 맞는 과제가 없습니다.</div>}</div><button className="add-dashed" onClick={onAdd}><Plus/> 새 과제 만들기</button>{editing&&<TaskModal classes={classes} task={editing} onClose={()=>setEditing(null)}/>}</div> }
+  return <div className="management"><div className="filter-bar"><div className="search"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="과제 이름으로 검색"/></div><select value={classFilter} onChange={e=>setClassFilter(e.target.value)}><option>전체 학급</option>{classes.map(x=><option key={x}>{x}</option>)}</select><select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option>전체 상태</option><option>진행 중</option><option>마감</option></select></div><div className="assignment-list">{visible.length?visible.map((t,i)=><AssignmentRow key={t.id} task={t} index={i} closed={isTaskClosed(t)} onEdit={()=>openEdit(t)} menuOpen={menu===t.id} onToggleMenu={()=>setMenu(menu===t.id?null:t.id)} onCloseMenu={()=>setMenu(null)} isGuest={isGuest}/>):<div className="empty-state">조건에 맞는 과제가 없습니다.</div>}</div><button className="add-dashed" onClick={onAdd}><Plus/> 새 과제 만들기</button>{editing&&<TaskModal classes={classes} task={editing} onClose={()=>setEditing(null)}/>}</div> }
 
-function AssignmentRow({task, index, closed, onEdit, menuOpen, onToggleMenu, onCloseMenu}) {
+function AssignmentRow({task, index, closed, onEdit, menuOpen, onToggleMenu, onCloseMenu, isGuest}) {
   const classNames = task.classNames || []
   const [rosterByClass, setRosterByClass] = useState({})
   const [submissions, setSubmissions] = useState([])
@@ -452,6 +476,7 @@ function AssignmentRow({task, index, closed, onEdit, menuOpen, onToggleMenu, onC
   const [deleting, setDeleting] = useState(false)
   const handleDelete = async () => {
     onCloseMenu()
+    if (isGuest) return guestBlock()
     if (!confirm(`"${task.title}" 과제를 삭제할까요? 삭제하면 되돌릴 수 없습니다.`)) return
     try { setDeleting(true); await deleteTask(task.id) } catch (error) { alert(`삭제 실패: ${error.message}`) } finally { setDeleting(false) }
   }
@@ -472,17 +497,18 @@ function TaskModal({onClose,task,classes:availableClasses}) {
 }
 function Required(){return <span className="required">필수</span>}
 
-function AdminPage({ active, classes, onClassAdded, teachers, pendingTeachers }) {
+function AdminPage({ active, classes, onClassAdded, teachers, pendingTeachers, isGuest }) {
   const [admin,setAdmin]=useState('박지훈'); const [toast,setToast]=useState(false)
   const [showAdd,setShowAdd]=useState(false); const [approvingUid,setApprovingUid]=useState(''); const [newTeacher,setNewTeacher]=useState(''); const [teacherEmail,setTeacherEmail]=useState(''); const [teacherClasses,setTeacherClasses]=useState([]); const [teacherSaving,setTeacherSaving]=useState(false); const [newClass,setNewClass]=useState(''); const [classSaving,setClassSaving]=useState(false)
   const closeAddModal = () => { setShowAdd(false); setApprovingUid(''); setNewTeacher(''); setTeacherEmail(''); setTeacherClasses([]) }
-  const openApproval = t => { const existingInvite = teachers.find(inv => inv.email === t.email); setApprovingUid(t.id); setNewTeacher(t.name||''); setTeacherEmail(t.email||''); setTeacherClasses(existingInvite?.classNames||[]); setShowAdd(true) }
+  const openAdd = () => isGuest ? guestBlock() : setShowAdd(true)
+  const openApproval = t => { if(isGuest) return guestBlock(); const existingInvite = teachers.find(inv => inv.email === t.email); setApprovingUid(t.id); setNewTeacher(t.name||''); setTeacherEmail(t.email||''); setTeacherClasses(existingInvite?.classNames||[]); setShowAdd(true) }
   return <div className="page-wrap"><PageTitle eyebrow="학교 관리" title={active==='권한 설정'?'권한 설정':active==='교사 관리'?'교사 관리':active==='학급 관리'?'학급 관리':'관리자 대시보드'} desc={active==='학급 관리'?'과제에 사용할 학급을 추가하고 확인하세요.':'교사 계정과 관리자 권한을 안전하게 관리하세요.'}/>
-    {active==='학급 관리'?<section className="panel teacher-list"><div className="section-title compact"><div><h2>학급 관리</h2><p>등록된 학급 {classes.length}개 · 학년과 반을 자유롭게 추가할 수 있어요.</p></div></div><form className="class-add-form" onSubmit={async e=>{e.preventDefault();const name=newClass.trim();if(classes.includes(name)){alert('이미 등록된 학급입니다.');return}try{setClassSaving(true);if(firebaseReady)await saveClass(name);onClassAdded(name);setNewClass('');setToast(true);setTimeout(()=>setToast(false),2500)}catch(error){alert(`학급 등록 실패: ${error.message}`)}finally{setClassSaving(false)}}}><label>새 학급 이름 <Required/><div><input required value={newClass} onChange={e=>setNewClass(e.target.value)} placeholder="예: 1학년 5반, 4학년 2반"/><button className="primary" disabled={classSaving}>{classSaving?'추가 중...':'학급 추가'}</button></div></label><small>{firebaseReady?'서버에 안전하게 저장됩니다.':'현재 기기의 브라우저에 저장됩니다.'}</small></form><div className="class-list">{classes.map((name,i)=><div key={name}><span>{String(i+1).padStart(2,'0')}</span><b>{name}</b><em>사용 중</em></div>)}</div></section>:<>
+    {active==='학급 관리'?<section className="panel teacher-list"><div className="section-title compact"><div><h2>학급 관리</h2><p>등록된 학급 {classes.length}개 · 학년과 반을 자유롭게 추가할 수 있어요.</p></div></div><form className="class-add-form" onSubmit={async e=>{e.preventDefault();if(isGuest)return guestBlock();const name=newClass.trim();if(classes.includes(name)){alert('이미 등록된 학급입니다.');return}try{setClassSaving(true);if(firebaseReady)await saveClass(name);onClassAdded(name);setNewClass('');setToast(true);setTimeout(()=>setToast(false),2500)}catch(error){alert(`학급 등록 실패: ${error.message}`)}finally{setClassSaving(false)}}}><label>새 학급 이름 <Required/><div><input required value={newClass} onChange={e=>setNewClass(e.target.value)} placeholder="예: 1학년 5반, 4학년 2반"/><button className="primary" disabled={classSaving}>{classSaving?'추가 중...':'학급 추가'}</button></div></label><small>{firebaseReady?'서버에 안전하게 저장됩니다.':'현재 기기의 브라우저에 저장됩니다.'}</small></form><div className="class-list">{classes.map((name,i)=><div key={name}><span>{String(i+1).padStart(2,'0')}</span><b>{name}</b><em>사용 중</em></div>)}</div></section>:<>
     <div className="admin-highlight"><div className="crown"><Crown/></div><div><span>현재 관리자</span><h2>{admin}</h2><p>관리자는 한 명만 지정할 수 있습니다.</p></div><div className="admin-id">admin · 최근 접속 오늘 08:32</div></div>
     {pendingTeachers?.length>0&&<section className="panel teacher-list"><div className="section-title compact"><div><h2>교사 가입 승인</h2><p>{pendingTeachers.length}명이 승인을 기다리고 있어요.</p></div></div>{pendingTeachers.map(t=><div className="teacher-row" key={t.id}><div className="avatar teacher">{t.name?.[0]||'교'}</div><div><b>{t.name||'이름 없음'}</b><span>{t.email}</span></div><button className="primary small" onClick={()=>openApproval(t)}>승인하기</button></div>)}</section>}
-    <div className="admin-grid"><section className="panel teacher-list"><div className="section-title compact"><div><h2>교사 권한 관리</h2><p>서버에 등록된 교사 {teachers.length}명</p></div><button className="primary small" onClick={()=>setShowAdd(true)}><Plus size={16}/> 교사 추가</button></div>{teachers.length?teachers.map(t=><div className="teacher-row" key={t.email}><div className="avatar teacher">{t.name?.[0]||'교'}</div><div><b>{t.name}</b><span>{t.email} · {t.classNames?.join(', ')||'담당 학급 없음'}</span></div><span className="status ok">교사</span><button aria-label="교사 삭제" className="icon-btn" onClick={async()=>{if(confirm(`${t.name} 교사의 권한을 삭제할까요?`))try{await removeTeacher(t.email)}catch(error){alert(`삭제 실패: ${error.message}`)}}}><X size={18}/></button></div>):<div className="empty-state">등록된 교사가 없습니다. 교사 이름과 이메일, 담당 학급을 등록해 주세요.</div>}</section>
-      <section className="panel transfer"><div className="transfer-icon"><ShieldCheck/></div><h2>관리자 권한 넘기기</h2><p>선택한 교사가 새 관리자가 되며,<br/>현재 관리자는 교사로 변경됩니다.</p><label>새 관리자 선택<select id="newAdmin"><option>이서연</option><option>김도현</option><option>오수민</option></select></label><button className="outline-danger" onClick={()=>{const v=document.getElementById('newAdmin').value;setAdmin(v);setToast(true);setTimeout(()=>setToast(false),2500)}}>관리자 권한 넘기기</button><div className="warning"><ShieldCheck size={16}/> 이 작업은 즉시 적용됩니다.</div></section>
+    <div className="admin-grid"><section className="panel teacher-list"><div className="section-title compact"><div><h2>교사 권한 관리</h2><p>서버에 등록된 교사 {teachers.length}명</p></div><button className="primary small" onClick={openAdd}><Plus size={16}/> 교사 추가</button></div>{teachers.length?teachers.map(t=><div className="teacher-row" key={t.email}><div className="avatar teacher">{t.name?.[0]||'교'}</div><div><b>{t.name}</b><span>{t.email} · {t.classNames?.join(', ')||'담당 학급 없음'}</span></div><span className="status ok">교사</span><button aria-label="교사 삭제" className="icon-btn" onClick={async()=>{if(isGuest)return guestBlock();if(confirm(`${t.name} 교사의 권한을 삭제할까요?`))try{await removeTeacher(t.email)}catch(error){alert(`삭제 실패: ${error.message}`)}}}><X size={18}/></button></div>):<div className="empty-state">등록된 교사가 없습니다. 교사 이름과 이메일, 담당 학급을 등록해 주세요.</div>}</section>
+      <section className="panel transfer"><div className="transfer-icon"><ShieldCheck/></div><h2>관리자 권한 넘기기</h2><p>선택한 교사가 새 관리자가 되며,<br/>현재 관리자는 교사로 변경됩니다.</p><label>새 관리자 선택<select id="newAdmin"><option>이서연</option><option>김도현</option><option>오수민</option></select></label><button className="outline-danger" onClick={()=>{if(isGuest)return guestBlock();const v=document.getElementById('newAdmin').value;setAdmin(v);setToast(true);setTimeout(()=>setToast(false),2500)}}>관리자 권한 넘기기</button><div className="warning"><ShieldCheck size={16}/> 이 작업은 즉시 적용됩니다.</div></section>
     </div></>}{toast&&<div className="toast"><CheckCircle2/> {active==='학급 관리'?'학급이 추가되었습니다.':'교사 정보가 서버에 저장되었습니다.'}</div>}{showAdd&&<div className="modal-backdrop"><div className="modal"><div className="modal-head"><div><p className="eyebrow">교사 권한</p><h2>{approvingUid?'교사 가입 승인':'교사 추가'}</h2></div><button onClick={closeAddModal}><X/></button></div><form onSubmit={async e=>{e.preventDefault();if(!teacherClasses.length){alert('담당 학급을 한 곳 이상 선택해 주세요.');return}try{setTeacherSaving(true);if(approvingUid)await approveTeacher({uid:approvingUid,name:newTeacher,email:teacherEmail,classNames:teacherClasses});else await saveTeacher({name:newTeacher,email:teacherEmail,classNames:teacherClasses});closeAddModal();setToast(true);setTimeout(()=>setToast(false),2500)}catch(error){alert(`교사 등록 실패: ${error.message}`)}finally{setTeacherSaving(false)}}}><div className="form-row"><label>교사 이름 <Required/><input required value={newTeacher} onChange={e=>setNewTeacher(e.target.value)} placeholder="이름을 입력하세요"/></label><label>{approvingUid?'이메일':'Google 이메일'} <Required/><input required type="email" readOnly={!!approvingUid} value={teacherEmail} onChange={e=>setTeacherEmail(e.target.value)} placeholder="teacher@gmail.com"/></label></div><fieldset className="class-picker"><legend>담당 학급 <Required/></legend><div>{classes.map(c=><label key={c} className={teacherClasses.includes(c)?'checked':''}><input type="checkbox" checked={teacherClasses.includes(c)} onChange={()=>setTeacherClasses(x=>x.includes(c)?x.filter(v=>v!==c):[...x,c])}/>{c}</label>)}</div></fieldset><p className="permission-note">선택한 학급의 과제와 학생 제출 현황을 관리할 수 있습니다.</p><div className="modal-actions"><button type="button" onClick={closeAddModal}>취소</button><button className="primary" disabled={teacherSaving}>{teacherSaving?'서버에 저장 중...':approvingUid?'승인 완료':'교사 추가'}</button></div></form></div></div>}</div>
 }
 
