@@ -3,7 +3,7 @@ import {
   ArrowLeft, ArrowRight, BarChart3, BookOpen, Check, CheckCircle2,
   ChevronDown, CircleUserRound, ClipboardCheck, Clock3, Code2, Crown,
   FilePlus2, FileCode2, LayoutDashboard, Lightbulb, LogOut, Menu, MessageCircle,
-  MoreHorizontal, PencilLine, Plus, Search, Send, ShieldCheck, Sparkles,
+  ImagePlus, MoreHorizontal, PencilLine, Plus, Search, Send, ShieldCheck, Sparkles,
   Upload, UserCog, Users, X, XCircle,
 } from 'lucide-react'
 import { ensureSession, firebaseReady, listenClasses, listenTasks, listenTeachers, loginRegisteredUser, logoutSession, removeTeacher, saveClass, saveTask, saveTeacher, saveUserProfile, submitEntry } from './firebase'
@@ -226,10 +226,20 @@ function TaskCard({ task, onClick }) {
 function TaskWorkspace({ task, student, onBack, onUpdate }) {
   const [messages, setMessages] = useState([{type:'guide', text:'어느 부분에서 막혔나요? 지금까지 생각한 방법을 알려주면 함께 단서를 찾아볼게요.'}])
   const [message, setMessage] = useState('')
+  const [questionImage, setQuestionImage] = useState(null)
+  const [imageError, setImageError] = useState('')
   const [entryFile, setEntryFile] = useState(null)
   const [fileError, setFileError] = useState('')
   const [result, setResult] = useState(null); const [uploading,setUploading]=useState(false)
-  const send = () => { if(!message.trim()) return; setMessages(m => [...m, {type:'me',text:message}, {type:'guide',text:'좋아요. 먼저 반복되는 움직임을 찾아볼까요? 오른쪽으로 움직이는 횟수와 위로 움직이는 횟수를 각각 세어 보고, 같은 동작을 묶을 수 있는지 생각해 보세요.'}]); setMessage('') }
+  const chooseQuestionImage = file => {
+    if(!file) return
+    if(!['image/jpeg','image/png','image/webp'].includes(file.type)){setImageError('JPG, PNG, WEBP 이미지만 첨부할 수 있어요.');return}
+    if(file.size>5*1024*1024){setImageError('이미지는 5MB 이하만 첨부할 수 있어요.');return}
+    const reader=new FileReader()
+    reader.onload=()=>{setQuestionImage({name:file.name,url:reader.result});setImageError('')}
+    reader.readAsDataURL(file)
+  }
+  const send = () => { if(!message.trim()&&!questionImage) return; setMessages(m => [...m, {type:'me',text:message.trim(),image:questionImage}, {type:'guide',text:questionImage?'사진을 확인했어요. 표시된 블록이 어떤 순서로 실행되는지 위에서부터 하나씩 따라가 보세요. 예상한 움직임과 실제 움직임이 달라지는 첫 지점은 어디인가요?':'좋아요. 먼저 반복되는 움직임을 찾아볼까요? 오른쪽으로 움직이는 횟수와 위로 움직이는 횟수를 각각 세어 보고, 같은 동작을 묶을 수 있는지 생각해 보세요.'}]); setMessage('');setQuestionImage(null);setImageError('') }
   const chooseFile = (file) => {
     if (!file) return
     if (!file.name.toLowerCase().endsWith('.ent')) { setEntryFile(null); setFileError('엔트리 프로젝트 파일(.ent)만 제출할 수 있어요.'); return }
@@ -242,7 +252,7 @@ function TaskWorkspace({ task, student, onBack, onUpdate }) {
       <section className="problem-panel panel"><div className="panel-heading"><span>과제 안내</span><div className="step-dots"><i className="on"></i><i></i><i></i></div></div><div className="problem-body"><div className="problem-no">과제 설명</div><div className="teacher-description">{task.description?.trim()||'교사가 작성한 과제 설명이 없습니다.'}</div>{task.hint&&<div className="hint-box"><Lightbulb size={20}/><div><b>생각 열기</b><p>{task.hint}</p></div></div>}<div className="submission-heading"><b>과제 파일 제출</b><p>완성한 엔트리 프로젝트 파일을 올려 주세요.</p></div><label className={`file-drop ${fileError?'has-error':''}`}><input type="file" accept=".ent,application/octet-stream" onChange={e=>chooseFile(e.target.files?.[0])}/><div className="file-icon">{entryFile?<FileCode2/>:<Upload/>}</div><div><b>{entryFile?entryFile.name:'엔트리 파일 업로드'}</b><p>{entryFile?`${(entryFile.size/1024).toFixed(1)} KB · 다른 파일 선택 가능`:'.ent 파일만 제출할 수 있어요.'}</p></div></label>{fileError&&<p className="field-error">{fileError}</p>}{result && <div className={`result ${result}`}>
         {result === 'correct' ? <><CheckCircle2/><div><b>정답이에요!</b><p>반복 구조를 정확하게 사용했어요.</p></div></> : <><XCircle/><div><b>아직 조금 부족해요.</b><p>블록의 순서와 반복 횟수를 다시 확인해 보세요. 수정 후 다시 제출할 수 있어요.</p></div></>}
       </div>}<button className="primary submit" onClick={submit} disabled={uploading}>{uploading?'파일을 제출하는 중...':result === 'wrong' ? '수정해서 다시 제출' : '과제 제출하기'}{!uploading&&<ArrowRight size={18}/>}</button></div></section>
-      <section className="chat-panel panel"><div className="chat-heading"><div><MessageCircle size={20}/><div><b>질문하기</b><span>해결 방법을 함께 찾아봐요</span></div></div><span className="online">도움 가능</span></div><div className="messages">{messages.map((m,i)=><div key={i} className={`message ${m.type}`}><span>{m.type === 'guide' ? '길잡이' : '나'}</span><p>{m.text}</p></div>)}</div><div className="quick-prompts"><button onClick={()=>setMessage('어디서부터 시작해야 할지 모르겠어요.')}>어디서 시작할까요?</button><button onClick={()=>setMessage('반복 블록은 언제 사용하나요?')}>반복 블록이 궁금해요</button></div><div className="chat-input"><textarea value={message} onChange={e=>setMessage(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}} placeholder="막힌 부분을 질문해 보세요."/><button onClick={send}><Send size={18}/></button></div></section>
+      <section className="chat-panel panel"><div className="chat-heading"><div><MessageCircle size={20}/><div><b>질문하기</b><span>해결 방법을 함께 찾아봐요</span></div></div><span className="online">도움 가능</span></div><div className="messages">{messages.map((m,i)=><div key={i} className={`message ${m.type}`}><span>{m.type === 'guide' ? '길잡이' : '나'}</span>{m.image&&<img className="message-image" src={m.image.url} alt={m.image.name}/>} {m.text&&<p>{m.text}</p>}</div>)}</div><div className="quick-prompts"><button onClick={()=>setMessage('어디서부터 시작해야 할지 모르겠어요.')}>어디서 시작할까요?</button><button onClick={()=>setMessage('반복 블록은 언제 사용하나요?')}>반복 블록이 궁금해요</button></div>{questionImage&&<div className="image-preview"><img src={questionImage.url} alt="첨부 이미지 미리보기"/><span>{questionImage.name}</span><button onClick={()=>setQuestionImage(null)} aria-label="첨부 이미지 삭제"><X size={15}/></button></div>}{imageError&&<div className="chat-file-error">{imageError}</div>}<div className="chat-input"><label className="image-attach" title="사진 첨부"><input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{chooseQuestionImage(e.target.files?.[0]);e.target.value=''}}/><ImagePlus size={19}/></label><textarea value={message} onChange={e=>setMessage(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}} placeholder="막힌 부분을 질문해 보세요."/><button onClick={send}><Send size={18}/></button></div></section>
     </div>
   </div>
 }
