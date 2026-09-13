@@ -133,9 +133,10 @@ export function listenTasks(callback, onError, access = {}) {
   if (!firebaseReady) return () => {}
   const constraints = []
   if (!access.admin && access.classNames?.length) constraints.push(access.classNames.length === 1 ? where('classNames', 'array-contains', access.classNames[0]) : where('classNames', 'array-contains-any', access.classNames.slice(0, 30)))
-  constraints.push(orderBy('createdAt', 'desc'))
   return onSnapshot(query(collection(db, 'tasks'), ...constraints), snapshot => {
-    callback(snapshot.docs.map(item => ({ id: item.id, ...item.data() })))
+    const items = snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
+    items.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+    callback(items)
   }, onError)
 }
 

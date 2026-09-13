@@ -52,7 +52,7 @@ function App() {
   const [serverError, setServerError] = useState('')
   const [teachers, setTeachers] = useState([])
 
-  useEffect(() => firebaseUser ? listenTasks(setTasks, error => setServerError(error.message), { admin: firebaseUser.role === 'admin', classNames: firebaseUser.role === 'student' ? [firebaseUser.className] : firebaseUser.classNames }) : () => {}, [firebaseUser])
+  useEffect(() => firebaseUser ? listenTasks(items => { setTasks(items); setServerError('') }, error => setServerError(error.message), { admin: firebaseUser.role === 'admin', classNames: firebaseUser.role === 'student' ? [firebaseUser.className] : firebaseUser.classNames }) : () => {}, [firebaseUser])
   useEffect(() => firebaseUser ? listenClasses(items => { if (items.length) setClasses(items.map(item => item.name)) }, error => setServerError(error.message)) : () => {}, [firebaseUser])
   useEffect(() => firebaseUser?.role === 'admin' ? listenTeachers(setTeachers, error => setServerError(error.message)) : () => {}, [firebaseUser])
   useEffect(() => localStorage.setItem('thinkingcoding-classes', JSON.stringify(classes)), [classes])
