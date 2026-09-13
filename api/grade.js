@@ -47,7 +47,7 @@ export default async function handler(req, res) {
         contents: [{ role: 'user', parts: [{ text: context }] }],
         generationConfig: {
           temperature: 0.2,
-          maxOutputTokens: 1024,
+          maxOutputTokens: 4096,
           responseMimeType: 'application/json'
         }
       })
@@ -61,7 +61,9 @@ export default async function handler(req, res) {
     return res.status(200).json({ correct, feedback: String(result.feedback || '').trim() || (correct ? '정답이에요!' : '다시 한번 확인해 보세요.') })
   } catch (error) {
     console.error('Gemini grading failed:', error?.message || error)
-    const message = error?.name === 'AbortError' ? '채점 시간이 오래 걸리고 있습니다. 잠시 후 다시 시도해 주세요.' : '채점 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
+    const message = error?.name === 'AbortError'
+      ? '채점 시간이 오래 걸리고 있습니다. 잠시 후 다시 시도해 주세요.'
+      : error?.message ? `채점 중 오류가 발생했습니다: ${error.message}` : '채점 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
     return res.status(502).json({ error: message })
   } finally {
     clearTimeout(timer)
