@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function userRole() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role; }
+    function isTeacher() { return signedIn() && (userRole() == 'teacher' || userRole() == 'admin'); }
+    function isAdmin() { return signedIn() && userRole() == 'admin'; }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == userId;
+    }
+    match /tasks/{taskId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isTeacher();
+    }
+    match /classes/{classId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+    match /submissions/{submissionId} {
+      allow create: if signedIn() && request.resource.data.studentId == request.auth.uid;
+      allow read: if signedIn() && (resource.data.studentId == request.auth.uid || isTeacher());
+      allow update: if isTeacher();
+    }
+  }
+}
