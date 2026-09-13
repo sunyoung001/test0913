@@ -1,6 +1,7 @@
 const PROGRAMMING_ONLY_MESSAGE = '프로그래밍과 관련된 질문만 할 수 있어요. 엔트리 블록, 코드, 오류, 알고리즘에 대해 질문해 주세요.'
 
 const systemInstruction = `당신은 한국 중학생의 블록 프로그래밍 학습을 돕는 튜터입니다.
+반드시 다른 문장이나 마크다운 없이 {"isProgramming":true 또는 false,"answer":"답변"} 형식의 JSON 하나만 출력하세요.
 사용자의 질문이 프로그래밍, 코딩, 컴퓨터 과학, 알고리즘, 엔트리/스크래치 블록, 프로그램 오류 해결과 직접 관련되는지 먼저 판단하세요.
 관련이 없으면 isProgramming을 false로 하고 answer는 비워 두세요.
 관련이 있으면 isProgramming을 true로 하고 다음 원칙에 따라 한국어로 답하세요.
@@ -59,13 +60,7 @@ export default async function handler(req, res) {
         contents: [{ role: 'user', parts }],
         generationConfig: {
           temperature: 0.35,
-          maxOutputTokens: 900,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: 'OBJECT',
-            required: ['isProgramming', 'answer'],
-            properties: { isProgramming: { type: 'BOOLEAN' }, answer: { type: 'STRING' } }
-          }
+          maxOutputTokens: 900
         }
       })
     })
@@ -77,6 +72,7 @@ export default async function handler(req, res) {
     if (!result.isProgramming) return res.status(200).json({ allowed: false, answer: PROGRAMMING_ONLY_MESSAGE })
     return res.status(200).json({ allowed: true, answer: String(result.answer || '').trim() || '질문을 조금 더 자세히 적어 주세요.' })
   } catch (error) {
+    console.error('Gemini request failed:', error?.message || error)
     const message = error?.name === 'AbortError' ? '답변 시간이 오래 걸리고 있습니다. 잠시 후 다시 질문해 주세요.' : '답변을 만드는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
     return res.status(502).json({ error: message })
   } finally {
