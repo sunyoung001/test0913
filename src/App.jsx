@@ -228,18 +228,31 @@ function TaskWorkspace({ task, student, onBack, onUpdate }) {
   const [message, setMessage] = useState('')
   const [questionImage, setQuestionImage] = useState(null)
   const [imageError, setImageError] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
   const [entryFile, setEntryFile] = useState(null)
   const [fileError, setFileError] = useState('')
   const [result, setResult] = useState(null); const [uploading,setUploading]=useState(false)
   const chooseQuestionImage = file => {
     if(!file) return
     if(!['image/jpeg','image/png','image/webp'].includes(file.type)){setImageError('JPG, PNG, WEBP 이미지만 첨부할 수 있어요.');return}
-    if(file.size>5*1024*1024){setImageError('이미지는 5MB 이하만 첨부할 수 있어요.');return}
+    if(file.size>2*1024*1024){setImageError('이미지는 2MB 이하만 첨부할 수 있어요.');return}
     const reader=new FileReader()
     reader.onload=()=>{setQuestionImage({name:file.name,url:reader.result});setImageError('')}
     reader.readAsDataURL(file)
   }
-  const send = () => { if(!message.trim()&&!questionImage) return; setMessages(m => [...m, {type:'me',text:message.trim(),image:questionImage}, {type:'guide',text:questionImage?'사진을 확인했어요. 표시된 블록이 어떤 순서로 실행되는지 위에서부터 하나씩 따라가 보세요. 예상한 움직임과 실제 움직임이 달라지는 첫 지점은 어디인가요?':'좋아요. 먼저 반복되는 움직임을 찾아볼까요? 오른쪽으로 움직이는 횟수와 위로 움직이는 횟수를 각각 세어 보고, 같은 동작을 묶을 수 있는지 생각해 보세요.'}]); setMessage('');setQuestionImage(null);setImageError('') }
+  const send = async () => {
+    const question=message.trim(), image=questionImage
+    if((!question&&!image)||chatLoading) return
+    setMessages(current=>[...current,{type:'me',text:question,image}])
+    setMessage('');setQuestionImage(null);setImageError('');setChatLoading(true)
+    try{
+      const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:question,image:image?.url,assignment:{title:task.title,description:task.description,hint:task.hint}})})
+      const data=await response.json().catch(()=>({}))
+      if(!response.ok) throw new Error(data.error||'답변을 받지 못했습니다.')
+      setMessages(current=>[...current,{type:'guide',text:data.answer}])
+    }catch(error){setMessages(current=>[...current,{type:'guide',text:error.message||'답변을 만드는 중 오류가 발생했습니다.'}])}
+    finally{setChatLoading(false)}
+  }
   const chooseFile = (file) => {
     if (!file) return
     if (!file.name.toLowerCase().endsWith('.ent')) { setEntryFile(null); setFileError('엔트리 프로젝트 파일(.ent)만 제출할 수 있어요.'); return }
@@ -252,7 +265,7 @@ function TaskWorkspace({ task, student, onBack, onUpdate }) {
       <section className="problem-panel panel"><div className="panel-heading"><span>과제 안내</span><div className="step-dots"><i className="on"></i><i></i><i></i></div></div><div className="problem-body"><div className="problem-no">과제 설명</div><div className="teacher-description">{task.description?.trim()||'교사가 작성한 과제 설명이 없습니다.'}</div>{task.hint&&<div className="hint-box"><Lightbulb size={20}/><div><b>생각 열기</b><p>{task.hint}</p></div></div>}<div className="submission-heading"><b>과제 파일 제출</b><p>완성한 엔트리 프로젝트 파일을 올려 주세요.</p></div><label className={`file-drop ${fileError?'has-error':''}`}><input type="file" accept=".ent,application/octet-stream" onChange={e=>chooseFile(e.target.files?.[0])}/><div className="file-icon">{entryFile?<FileCode2/>:<Upload/>}</div><div><b>{entryFile?entryFile.name:'엔트리 파일 업로드'}</b><p>{entryFile?`${(entryFile.size/1024).toFixed(1)} KB · 다른 파일 선택 가능`:'.ent 파일만 제출할 수 있어요.'}</p></div></label>{fileError&&<p className="field-error">{fileError}</p>}{result && <div className={`result ${result}`}>
         {result === 'correct' ? <><CheckCircle2/><div><b>정답이에요!</b><p>반복 구조를 정확하게 사용했어요.</p></div></> : <><XCircle/><div><b>아직 조금 부족해요.</b><p>블록의 순서와 반복 횟수를 다시 확인해 보세요. 수정 후 다시 제출할 수 있어요.</p></div></>}
       </div>}<button className="primary submit" onClick={submit} disabled={uploading}>{uploading?'파일을 제출하는 중...':result === 'wrong' ? '수정해서 다시 제출' : '과제 제출하기'}{!uploading&&<ArrowRight size={18}/>}</button></div></section>
-      <section className="chat-panel panel"><div className="chat-heading"><div><MessageCircle size={20}/><div><b>질문하기</b><span>해결 방법을 함께 찾아봐요</span></div></div><span className="online">도움 가능</span></div><div className="messages">{messages.map((m,i)=><div key={i} className={`message ${m.type}`}><span>{m.type === 'guide' ? '길잡이' : '나'}</span>{m.image&&<img className="message-image" src={m.image.url} alt={m.image.name}/>} {m.text&&<p>{m.text}</p>}</div>)}</div><div className="quick-prompts"><button onClick={()=>setMessage('어디서부터 시작해야 할지 모르겠어요.')}>어디서 시작할까요?</button><button onClick={()=>setMessage('반복 블록은 언제 사용하나요?')}>반복 블록이 궁금해요</button></div>{questionImage&&<div className="image-preview"><img src={questionImage.url} alt="첨부 이미지 미리보기"/><span>{questionImage.name}</span><button onClick={()=>setQuestionImage(null)} aria-label="첨부 이미지 삭제"><X size={15}/></button></div>}{imageError&&<div className="chat-file-error">{imageError}</div>}<div className="chat-input"><label className="image-attach" title="사진 첨부"><input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{chooseQuestionImage(e.target.files?.[0]);e.target.value=''}}/><ImagePlus size={19}/></label><textarea value={message} onChange={e=>setMessage(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}} placeholder="막힌 부분을 질문해 보세요."/><button onClick={send}><Send size={18}/></button></div></section>
+      <section className="chat-panel panel"><div className="chat-heading"><div><MessageCircle size={20}/><div><b>질문하기</b><span>프로그래밍 질문을 설명해 드려요</span></div></div><span className="online">{chatLoading?'답변 중':'도움 가능'}</span></div><div className="messages">{messages.map((m,i)=><div key={i} className={`message ${m.type}`}><span>{m.type === 'guide' ? '길잡이' : '나'}</span>{m.image&&<img className="message-image" src={m.image.url} alt={m.image.name}/>} {m.text&&<p>{m.text}</p>}</div>)}{chatLoading&&<div className="message guide loading"><span>길잡이</span><p>질문을 살펴보고 있어요…</p></div>}</div><div className="quick-prompts"><button onClick={()=>setMessage('어디서부터 시작해야 할지 모르겠어요.')}>어디서 시작할까요?</button><button onClick={()=>setMessage('반복 블록은 언제 사용하나요?')}>반복 블록이 궁금해요</button></div>{questionImage&&<div className="image-preview"><img src={questionImage.url} alt="첨부 이미지 미리보기"/><span>{questionImage.name}</span><button onClick={()=>setQuestionImage(null)} aria-label="첨부 이미지 삭제"><X size={15}/></button></div>}{imageError&&<div className="chat-file-error">{imageError}</div>}<div className="chat-input"><label className="image-attach" title="사진 첨부"><input type="file" accept="image/png,image/jpeg,image/webp" disabled={chatLoading} onChange={e=>{chooseQuestionImage(e.target.files?.[0]);e.target.value=''}}/><ImagePlus size={19}/></label><textarea value={message} disabled={chatLoading} onChange={e=>setMessage(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}} placeholder="프로그래밍에서 막힌 부분을 질문해 보세요."/><button onClick={send} disabled={chatLoading||(!message.trim()&&!questionImage)} aria-label="질문 보내기"><Send size={18}/></button></div></section>
     </div>
   </div>
 }
